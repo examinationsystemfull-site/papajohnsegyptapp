@@ -1,0 +1,3044 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#020617">
+    <title>كافيه النيل العصري - المنيو الرقمي ولوحة التحكم</title>
+
+    <!-- Tailwind CSS CDN (نسخة مثبّتة لضمان الاستقرار) -->
+    <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+    <!-- Google Fonts: Cairo -->
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
+
+    <!-- Firebase SDK v8 (Realtime Database) -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
+    <!-- مكتبة توليد رموز QR -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        cairo: ['Cairo', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        /* إخفاء شريط التمرير في شريط الأقسام (كان مستخدماً كاسم كلاس دون تعريف) */
+        .scrollbar-none { scrollbar-width: none; -ms-overflow-style: none; }
+        .scrollbar-none::-webkit-scrollbar { display: none; }
+
+        /* مؤشر التحميل الدوّار (CSS Spinner) */
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.25);
+            border-top-color: #f59e0b;
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+            flex-shrink: 0;
+        }
+        .spinner-lg { width: 28px; height: 28px; border-width: 3px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* احترام تفضيل تقليل الحركة */
+        @media (prefers-reduced-motion: reduce) {
+            .spinner { animation-duration: 2s; }
+            .animate-pulse { animation: none; }
+        }
+
+        /* وضوح التركيز عند التنقل بلوحة المفاتيح */
+        button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible {
+            outline: 2px solid #f59e0b;
+            outline-offset: 2px;
+        }
+
+        /* تنسيق إشعارات التنبيه */
+        .toast-enter { animation: toast-in 0.25s ease-out; }
+        @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-cairo min-h-screen pb-16">
+
+    <!-- Header / Banner -->
+    <header id="site-header" class="bg-gradient-to-r from-amber-600 to-amber-800 text-white py-8 px-4 text-center shadow-lg relative overflow-hidden">
+        <!-- خلفية الهيدر المخصصة (تظهر عند رفع صورة من الإعدادات) -->
+        <div id="header-bg" class="hidden absolute inset-0 bg-cover bg-center" aria-hidden="true"></div>
+        <div id="header-overlay" class="hidden absolute inset-0 bg-black/45" aria-hidden="true"></div>
+        <div class="max-w-md mx-auto relative z-10">
+            <div id="cafe-logo" class="w-20 h-20 bg-white/10 backdrop-blur-md rounded-full mx-auto flex items-center justify-center text-3xl mb-3 shadow-inner border border-white/20 overflow-hidden">
+                ☕
+            </div>
+            <h1 id="cafe-name" class="text-3xl font-black tracking-wide">كافيه النيل العصري</h1>
+            <p class="text-amber-100 text-sm mt-1">المنيا - كورنيش النيل بجوار برج المنهري</p>
+            <div class="mt-4 inline-flex items-center gap-2 bg-emerald-600 text-white text-xs px-3 py-1.5 rounded-full font-semibold shadow">
+                <span class="w-2 h-2 rounded-full bg-emerald-300 animate-pulse"></span>
+                متاح للطلبات والاستلام الفوري
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="max-w-md md:max-w-3xl lg:max-w-5xl mx-auto px-4 mt-6">
+
+        <!-- شارة رقم الطاولة (تظهر فقط عند فتح الرابط من QR الطاولة) -->
+        <div id="table-badge" class="hidden mb-4 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-sm font-bold rounded-xl px-4 py-2 text-center"></div>
+
+        <!-- Categories Filter (تُرسم من CATEGORIES) -->
+        <div id="category-filters" class="flex gap-2 overflow-x-auto pb-2 scrollbar-none mb-6" role="group" aria-label="أقسام المنيو"></div>
+
+        <!-- Products List (Rendered Dynamically) -->
+        <div id="products-container" class="grid grid-cols-1 md:grid-cols-2 gap-4 items-start" aria-live="polite">
+            <!-- Will be populated by JavaScript -->
+        </div>
+
+        <!-- Admin Access & Footer Section -->
+        <div class="mt-12 space-y-4">
+            <div class="bg-gradient-to-br from-slate-900 to-slate-900/60 border border-slate-800 rounded-2xl p-5 text-center shadow-lg">
+                <h4 class="font-bold text-white text-base"> الإدارة</h4>
+                <p class="text-slate-400 text-xs mt-1 mb-4">قم بإدارة المنتجات، الأسعار، وتعديل القائمة بسهولة من لوحة التحكم الخاصة بك.</p>
+                <button onclick="openAdminLogin()" class="bg-slate-800 hover:bg-slate-700 text-amber-400 border border-amber-500/30 font-bold text-xs px-5 py-2.5 rounded-xl shadow transition w-full flex items-center justify-center gap-2">
+                    <span>⚙️ فتح لوحة التحكم الإدارية</span>
+                </button>
+            </div>
+
+            <div class="text-center pt-2">
+                <a href="https://wa.me/201095351066?text=مرحباً، أود الاستفسار عن تصميم موقع أو منيو رقمي لمشروعي" target="_blank" rel="noopener noreferrer" class="text-xs text-slate-500 hover:text-slate-400 transition">
+© 2026 بابا جونز مصر -   راسل المبرمج من هنا  💻
+                </a>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Admin Password Modal -->
+    <div id="password-modal" role="dialog" aria-modal="true" aria-labelledby="password-modal-title" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-xs w-full shadow-2xl">
+            <h3 id="password-modal-title" class="font-bold text-lg text-white mb-2">كلمة مرور الإدارة</h3>
+            <p class="text-xs text-slate-400 mb-4">أدخل كلمة المرور لدخول لوحة التحكم </p>
+            <input type="password" id="admin-pass-input" autocomplete="off" placeholder="كلمة المرور..." class="w-full bg-slate-955 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm mb-4 focus:outline-none focus:border-amber-500">
+            <div class="flex gap-2">
+                <button onclick="verifyAdminPassword()" class="flex-1 bg-amber-600 hover:bg-amber-500 text-white font-bold text-sm py-2 rounded-xl transition">دخول</button>
+                <button onclick="closeModals()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-sm py-2 rounded-xl transition">إلغاء</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Admin Dashboard Modal -->
+    <div id="admin-modal" role="dialog" aria-modal="true" aria-labelledby="admin-modal-title" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4 overflow-y-auto">
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-md md:max-w-3xl w-full shadow-2xl my-auto">
+            <div class="flex items-center justify-between mb-3 pb-3 border-b border-slate-800">
+                <h3 id="admin-modal-title" class="font-black text-xl text-white flex items-center gap-2"><span>⚙️</span> لوحة التحكم</h3>
+                <button onclick="closeModals()" aria-label="إغلاق" class="text-slate-400 hover:text-white text-xl font-bold px-2">✕</button>
+            </div>
+
+            <!-- حالة الاتصال بالسحابة -->
+            <div id="sync-status" class="flex items-center gap-2 text-xs text-slate-400 mb-5" role="status"></div>
+
+            <!-- بطاقات الإحصائيات الحية (تتحدث لحظياً من قاعدة البيانات) -->
+            <div id="stats-cards" class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
+                <div class="bg-slate-950/60 border border-slate-800/80 rounded-2xl p-4">
+                    <div class="flex items-center gap-2 text-xs text-slate-400 mb-2"><span aria-hidden="true">💾</span><span>استهلاك قاعدة البيانات</span></div>
+                    <div id="stat-db" class="text-2xl font-black text-white min-h-[2rem] flex items-center">—</div>
+                    <div class="h-1.5 bg-slate-800 rounded-full overflow-hidden mt-2" aria-hidden="true"><div id="stat-db-bar" class="h-full bg-amber-500 rounded-full transition-all duration-500" style="width:0%"></div></div>
+                    <p id="stat-db-note" class="text-[11px] text-slate-500 mt-1.5">حجم تقديري</p>
+                </div>
+                <div class="bg-slate-950/60 border border-slate-800/80 rounded-2xl p-4">
+                    <div class="flex items-center gap-2 text-xs text-slate-400 mb-2"><span aria-hidden="true">🍽️</span><span>عدد الأصناف</span></div>
+                    <div id="stat-items" class="text-2xl font-black text-white min-h-[2rem] flex items-center">—</div>
+                    <p class="text-[11px] text-slate-500 mt-1.5">أصناف القائمة الحالية</p>
+                </div>
+                <div class="bg-slate-950/60 border border-slate-800/80 rounded-2xl p-4">
+                    <div class="flex items-center gap-2 text-xs text-slate-400 mb-2"><span aria-hidden="true">👥</span><span>عدد العملاء</span></div>
+                    <div id="stat-customers" class="text-2xl font-black text-white min-h-[2rem] flex items-center">—</div>
+                    <p class="text-[11px] text-slate-500 mt-1.5">العملاء المسجلون</p>
+                </div>
+            </div>
+
+            <!-- التبويبات الفرعية -->
+            <div class="flex gap-2 overflow-x-auto pb-2 scrollbar-none mb-5" role="tablist" aria-label="أقسام لوحة التحكم">
+                <button type="button" role="tab" id="tab-btn-products" aria-selected="true" onclick="switchAdminTab('products')" class="px-4 py-2 rounded-xl text-sm font-bold bg-amber-600 text-white shadow-md transition whitespace-nowrap">🍽️ المنتجات</button>
+                <button type="button" role="tab" id="tab-btn-customers" aria-selected="false" onclick="switchAdminTab('customers')" class="px-4 py-2 rounded-xl text-sm font-semibold bg-slate-900 border border-slate-800 text-slate-300 hover:bg-slate-800 transition whitespace-nowrap">👥 العملاء</button>
+                <button type="button" role="tab" id="tab-btn-settings" aria-selected="false" onclick="switchAdminTab('settings')" class="px-4 py-2 rounded-xl text-sm font-semibold bg-slate-900 border border-slate-800 text-slate-300 hover:bg-slate-800 transition whitespace-nowrap">⚙️ الإعدادات</button>
+            </div>
+
+            <!-- تبويب المنتجات -->
+            <div id="tab-panel-products" role="tabpanel">
+                <div class="md:grid md:grid-cols-2 md:gap-6 md:items-start">
+                    <div>
+                        <!-- Add / Edit Form -->
+            <form id="product-form" onsubmit="saveProduct(event)" class="bg-slate-950/60 border border-slate-800/80 p-4 rounded-2xl mb-6 space-y-3">
+                <h4 id="form-title" class="font-bold text-amber-400 text-sm">➕ إضافة منتج جديد</h4>
+                <input type="hidden" id="edit-index" value="">
+                <input type="hidden" id="edit-id" value="">
+
+                <div>
+                    <label for="p-name" class="block text-xs text-slate-400 mb-1">اسم المنتج</label>
+                    <input type="text" id="p-name" required maxlength="80" placeholder="مثال: مارجريتا" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500">
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label for="p-price" class="block text-xs text-slate-400 mb-1">السعر / أقل سعر (ج.م)</label>
+                        <input type="number" id="p-price" min="1" max="5000" step="any" placeholder="123" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500">
+                    </div>
+                    <div>
+                        <label for="p-cat" class="block text-xs text-slate-400 mb-1">القسم</label>
+                        <select id="p-cat" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500">
+                            </select>
+                    </div>
+                </div>
+
+                <div>
+                    <label for="p-desc" class="block text-xs text-slate-400 mb-1">الوصف المختصر</label>
+                    <input type="text" id="p-desc" maxlength="200" placeholder="مكونات المنتج أو وصف قصير..." class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500">
+                </div>
+
+                <!-- حقول التسعير والخيارات المتقدمة -->
+                <div>
+                    <label for="p-name-en" class="block text-xs text-slate-400 mb-1">الاسم بالإنجليزية (اختياري)</label>
+                    <input type="text" id="p-name-en" dir="ltr" maxlength="80" placeholder="Margherita" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500">
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label for="p-price-max" class="block text-xs text-slate-400 mb-1">أعلى سعر - للنطاق (اختياري)</label>
+                        <input type="number" id="p-price-max" min="1" max="5000" step="any" placeholder="360" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500">
+                    </div>
+                    <div>
+                        <label for="p-thick-max" class="block text-xs text-slate-400 mb-1">أعلى سعر مع العجينة السميكة/الإضافات</label>
+                        <input type="number" id="p-thick-max" min="1" max="5000" step="any" placeholder="369" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500">
+                    </div>
+                </div>
+                <div>
+                    <label for="p-variants" class="block text-xs text-slate-400 mb-1">خيارات بأسعار محددة (سطر لكل خيار: الاسم|السعر)</label>
+                    <textarea id="p-variants" rows="3" placeholder="250 مل|30&#10;400 مل|40&#10;1 لتر|60" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500"></textarea>
+                    <p class="text-[11px] text-slate-500 mt-1">عند إدخال خيارات يُحسب النطاق تلقائياً منها.</p>
+                </div>
+                <div>
+                    <label for="p-flavors" class="block text-xs text-slate-400 mb-1">النكهات / الأنواع (افصل بفاصلة أو سطر جديد)</label>
+                    <textarea id="p-flavors" rows="2" placeholder="أوريجينال، باربيكيو، بافلو" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500"></textarea>
+                </div>
+                <div>
+                    <span class="block text-xs text-slate-400 mb-1">الأحجام المتاحة (للبيتزا)</span>
+                    <div class="flex flex-wrap gap-x-4 gap-y-2"><label class="inline-flex items-center gap-1.5 text-xs text-slate-300"><input type="checkbox" class="p-size accent-amber-500" value="small"> صغير</label><label class="inline-flex items-center gap-1.5 text-xs text-slate-300"><input type="checkbox" class="p-size accent-amber-500" value="medium"> وسط</label><label class="inline-flex items-center gap-1.5 text-xs text-slate-300"><input type="checkbox" class="p-size accent-amber-500" value="large"> كبير</label><label class="inline-flex items-center gap-1.5 text-xs text-slate-300"><input type="checkbox" class="p-size accent-amber-500" value="family"> عائلي</label></div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label for="p-stuffed-min" class="block text-xs text-slate-400 mb-1">الأطراف المحشوة: من (ج.م)</label>
+                        <input type="number" id="p-stuffed-min" min="0" max="1000" step="any" placeholder="75" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500">
+                    </div>
+                    <div>
+                        <label for="p-stuffed-max" class="block text-xs text-slate-400 mb-1">الأطراف المحشوة: إلى (ج.م)</label>
+                        <input type="number" id="p-stuffed-max" min="0" max="1000" step="any" placeholder="100" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500">
+                    </div>
+                </div>
+                <div>
+                    <label for="p-price-note" class="block text-xs text-slate-400 mb-1">ملاحظة السعر (اختياري)</label>
+                    <input type="text" id="p-price-note" maxlength="200" placeholder="زيادة تقريبية حسب الحجم" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500">
+                </div>
+                <div class="flex flex-wrap gap-x-5 gap-y-2">
+                    <label class="inline-flex items-center gap-2 text-xs text-slate-300"><input type="checkbox" id="p-available" class="accent-amber-500" checked> متاح للطلب</label>
+                    <label class="inline-flex items-center gap-2 text-xs text-slate-300"><input type="checkbox" id="p-approx" class="accent-amber-500" checked> السعر تقريبي</label>
+                </div>
+
+                <!-- رفع صورة المنتج -->
+                <div>
+                    <label for="p-image" class="block text-xs text-slate-400 mb-1">صورة المنتج</label>
+                    <div class="flex items-center gap-3">
+                        <div id="image-preview" class="w-20 h-20 bg-slate-900 border border-slate-700 rounded-xl overflow-hidden flex items-center justify-center text-2xl flex-shrink-0" aria-live="polite">🖼️</div>
+                        <div class="flex-grow min-w-0 space-y-2">
+                            <input type="file" id="p-image" accept="image/jpeg,image/png,image/webp,image/gif" onchange="handleImageSelected(event)" class="block w-full text-xs text-slate-400 file:me-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-slate-800 file:text-amber-400 file:font-bold file:text-xs hover:file:bg-slate-700 file:cursor-pointer">
+                            <button type="button" id="remove-image-btn" onclick="removeProductImage()" class="hidden text-xs text-rose-400 hover:text-rose-300 transition">إزالة الصورة</button>
+                        </div>
+                    </div>
+                    <input type="hidden" id="p-image-data" value="">
+                    <p class="text-[11px] text-slate-500 mt-1.5">تُضغط الصورة تلقائياً وتُقصّ بالعرض داخل المربع دون تشويه. الحد الأقصى للملف الأصلي 8 ميجابايت.</p>
+                </div>
+
+                <div>
+                    <label for="p-icon" class="block text-xs text-slate-400 mb-1">رمز الأيقونة (إيموجي) - يظهر عند عدم وجود صورة</label>
+                    <input type="text" id="p-icon" value="🍕" maxlength="8" placeholder="🍕 أو 🥤 أو 🍰" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500">
+                </div>
+
+                <div class="flex gap-2 pt-2">
+                    <button type="submit" id="save-btn" class="flex-1 flex items-center justify-center gap-2 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs py-2.5 rounded-xl transition shadow disabled:opacity-60 disabled:cursor-not-allowed">حفظ المنتج</button>
+                    <button type="button" onclick="resetForm()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs px-4 py-2.5 rounded-xl transition">إلغاء</button>
+                </div>
+            </form>
+                    </div>
+                    <div>
+                        <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
+                            <h4 class="font-bold text-sm text-slate-300">قائمة المنتجات الحالية:</h4>
+                            <button type="button" onclick="resetMenuToDefaults()" class="bg-slate-800 hover:bg-slate-700 text-amber-400 border border-amber-500/30 font-bold text-[11px] px-3 py-1.5 rounded-lg transition">♻️ استعادة قائمة بابا جونز (القاهرة)</button>
+                        </div>
+            <div id="admin-products-list" class="space-y-2 max-h-96 overflow-y-auto pr-1">
+                <!-- Dynamically rendered admin items -->
+            </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- تبويب إدارة العملاء -->
+            <div id="tab-panel-customers" role="tabpanel" class="hidden">
+                <form id="customer-form" onsubmit="saveCustomer(event)" class="bg-slate-950/60 border border-slate-800/80 p-4 rounded-2xl mb-5 space-y-3" autocomplete="off">
+                    <h4 id="customer-form-title" class="font-bold text-amber-400 text-sm">➕ إضافة عميل جديد</h4>
+                    <input type="hidden" id="c-edit-id" value="">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label for="c-name" class="block text-xs text-slate-400 mb-1">اسم العميل</label>
+                            <input type="text" id="c-name" required maxlength="60" placeholder="مثال: أحمد محمود" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500">
+                        </div>
+                        <div>
+                            <label for="c-phone" class="block text-xs text-slate-400 mb-1">رقم الهاتف (واتساب)</label>
+                            <input type="tel" id="c-phone" required dir="ltr" inputmode="tel" maxlength="20" placeholder="201095351066 أو 01095351066" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500">
+                        </div>
+                    </div>
+                    <div class="flex gap-2 pt-1">
+                        <button type="submit" id="customer-save-btn" class="flex-1 flex items-center justify-center gap-2 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs py-2.5 rounded-xl transition shadow disabled:opacity-60 disabled:cursor-not-allowed">حفظ العميل</button>
+                        <button type="button" onclick="resetCustomerForm()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs px-4 py-2.5 rounded-xl transition">إلغاء</button>
+                    </div>
+                </form>
+
+                <h4 class="font-bold text-sm text-slate-300 mb-3">سجل العملاء:</h4>
+                <div class="overflow-auto max-h-80 rounded-2xl border border-slate-800">
+                    <table class="w-full text-sm text-right min-w-[480px]">
+                        <thead class="bg-slate-950 text-slate-400 text-xs sticky top-0">
+                            <tr>
+                                <th scope="col" class="px-3 py-2.5 font-semibold">اسم العميل</th>
+                                <th scope="col" class="px-3 py-2.5 font-semibold">تاريخ التسجيل</th>
+                                <th scope="col" class="px-3 py-2.5 font-semibold">الإجراءات</th>
+                            </tr>
+                        </thead>
+                        <tbody id="customers-table-body" class="divide-y divide-slate-800"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- تبويب الإعدادات -->
+            <div id="tab-panel-settings" role="tabpanel" class="hidden">
+                <form id="settings-form" onsubmit="saveCafeSettings(event)" class="bg-slate-950/60 border border-slate-800/80 p-4 rounded-2xl space-y-3" autocomplete="off">
+                    <h4 class="font-bold text-amber-400 text-sm">🏪 إعدادات الكافيه</h4>
+
+                    <div>
+                        <label for="s-phone" class="block text-xs text-slate-400 mb-1">رقم هاتف استقبال الطلبات (واتساب)</label>
+                        <input type="tel" id="s-phone" required dir="ltr" inputmode="tel" maxlength="20" placeholder="201095351066 أو 01095351066" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500">
+                        <p class="text-[11px] text-slate-500 mt-1">يُستخدم لإرسال الطلبات من زر "اطلب الآن". يُفضّل كتابته بالصيغة الدولية.</p>
+                    </div>
+
+                    <div>
+                        <label for="s-name" class="block text-xs text-slate-400 mb-1">اسم الكافيه</label>
+                        <input type="text" id="s-name" required maxlength="60" placeholder="كافيه النيل العصري" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500">
+                    </div>
+
+                    <div>
+                        <label for="s-logo" class="block text-xs text-slate-400 mb-1">صورة الشعار (Logo)</label>
+                        <div class="flex items-center gap-3">
+                            <div id="logo-preview" class="w-16 h-16 bg-slate-900 border border-slate-700 rounded-full overflow-hidden flex items-center justify-center text-2xl flex-shrink-0" aria-live="polite">☕</div>
+                            <div class="flex-grow min-w-0 space-y-2">
+                                <input type="file" id="s-logo" accept="image/jpeg,image/png,image/webp,image/gif" onchange="handleSettingsImage(event, 'logo')" class="block w-full text-xs text-slate-400 file:me-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-slate-800 file:text-amber-400 file:font-bold file:text-xs hover:file:bg-slate-700 file:cursor-pointer">
+                                <button type="button" id="remove-logo-btn" onclick="removeSettingsImage('logo')" class="hidden text-xs text-rose-400 hover:text-rose-300 transition">إزالة الشعار</button>
+                            </div>
+                        </div>
+                        <input type="hidden" id="s-logo-data" value="">
+                    </div>
+
+                    <div>
+                        <label for="s-bg" class="block text-xs text-slate-400 mb-1">صورة خلفية المنطقة العلوية (Header)</label>
+                        <div id="bg-preview" class="w-full h-24 bg-slate-900 border border-slate-700 rounded-xl overflow-hidden flex items-center justify-center text-2xl mb-2" aria-live="polite">🖼️</div>
+                        <input type="file" id="s-bg" accept="image/jpeg,image/png,image/webp,image/gif" onchange="handleSettingsImage(event, 'bg')" class="block w-full text-xs text-slate-400 file:me-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-slate-800 file:text-amber-400 file:font-bold file:text-xs hover:file:bg-slate-700 file:cursor-pointer">
+                        <button type="button" id="remove-bg-btn" onclick="removeSettingsImage('bg')" class="hidden text-xs text-rose-400 hover:text-rose-300 transition mt-2">إزالة الخلفية</button>
+                        <input type="hidden" id="s-bg-data" value="">
+                        <p class="text-[11px] text-slate-500 mt-1.5">تُضغط الصور تلقائياً قبل الحفظ. يُنصح بصورة أفقية واضحة.</p>
+                    </div>
+
+                    <button type="submit" id="settings-save-btn" class="w-full flex items-center justify-center gap-2 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs py-2.5 rounded-xl transition shadow disabled:opacity-60 disabled:cursor-not-allowed">حفظ الإعدادات</button>
+                </form>
+
+                <!-- قسم رمز QR للطاولات -->
+            <div class="mt-6 pt-5 border-t border-slate-800">
+                <h4 class="font-bold text-sm text-amber-400 mb-1">📱 رمز QR للطاولات</h4>
+                <p class="text-xs text-slate-400 mb-3">ولّد رمزاً لكل طاولة ليفتح الزبون المنيو مباشرة بكاميرا هاتفه.</p>
+
+                <div class="space-y-3">
+                    <div>
+                        <label for="qr-base-url" class="block text-xs text-slate-400 mb-1">رابط المنيو المنشور</label>
+                        <input type="url" id="qr-base-url" dir="ltr" placeholder="https://your-domain.com/menu/" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500">
+                        <p id="qr-file-warning" class="hidden text-[11px] text-amber-400 mt-1">أنت تفتح الملف من جهازك مباشرة؛ ضع رابط الموقع بعد رفعه على الاستضافة.</p>
+                    </div>
+                    <div>
+                        <label for="qr-table" class="block text-xs text-slate-400 mb-1">رقم الطاولة (اختياري)</label>
+                        <input type="text" id="qr-table" maxlength="10" placeholder="مثال: 5" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500">
+                    </div>
+                    <button type="button" onclick="generateQR()" class="w-full bg-slate-800 hover:bg-slate-700 text-amber-400 border border-amber-500/30 font-bold text-xs py-2.5 rounded-xl transition">توليد رمز QR</button>
+
+                    <div id="qr-result" class="hidden text-center space-y-3">
+                        <div class="inline-block bg-white p-2 rounded-xl">
+                            <canvas id="qr-canvas" class="block w-48 h-48 max-w-full"></canvas>
+                        </div>
+                        <p id="qr-link-text" dir="ltr" class="text-xs text-slate-400 break-all"></p>
+                        <div class="flex gap-2">
+                            <button type="button" onclick="downloadQR()" class="flex-1 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs py-2 rounded-xl transition">تحميل الصورة</button>
+                            <button type="button" onclick="copyMenuLink()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs py-2 rounded-xl transition">نسخ الرابط</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+                <!-- نموذج تعديل بيانات دخول المدير -->
+            <div class="mt-6 pt-5 border-t border-slate-800">
+                <h4 class="font-bold text-sm text-amber-400 mb-1">🔐 بيانات دخول المدير</h4>
+                <p class="text-xs text-slate-400 mb-3">غيّر كلمة مرور لوحة التحكم. تُحفظ مشفّرة وتسري على جميع الأجهزة.</p>
+
+                <form id="password-change-form" onsubmit="changeAdminPassword(event)" class="bg-slate-950/60 border border-slate-800/80 p-4 rounded-2xl space-y-3" autocomplete="off">
+                    <div>
+                        <label for="pass-current" class="block text-xs text-slate-400 mb-1">كلمة المرور الحالية</label>
+                        <input type="password" id="pass-current" required autocomplete="current-password" maxlength="64" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500">
+                    </div>
+                    <div>
+                        <label for="pass-new" class="block text-xs text-slate-400 mb-1">كلمة المرور الجديدة (6 أحرف على الأقل)</label>
+                        <input type="password" id="pass-new" required minlength="6" maxlength="64" autocomplete="new-password" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500">
+                    </div>
+                    <div>
+                        <label for="pass-confirm" class="block text-xs text-slate-400 mb-1">تأكيد كلمة المرور الجديدة</label>
+                        <input type="password" id="pass-confirm" required minlength="6" maxlength="64" autocomplete="new-password" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500">
+                    </div>
+                    <button type="submit" id="pass-save-btn" class="w-full flex items-center justify-center gap-2 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs py-2.5 rounded-xl transition shadow disabled:opacity-60 disabled:cursor-not-allowed">تحديث كلمة المرور</button>
+                </form>
+            </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- نافذة خيارات الطلب (الحجم / النكهة / الأطراف المحشوة) -->
+    <div id="order-modal" role="dialog" aria-modal="true" aria-labelledby="order-modal-title" onclick="if (event.target === this) closeOrderModal()" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div id="order-modal-body" class="bg-slate-900 border border-slate-800 rounded-2xl p-5 max-w-sm w-full shadow-2xl max-h-[90vh] overflow-y-auto space-y-4"></div>
+    </div>
+
+    <!-- حاوية الإشعارات -->
+    <div id="toast-container" class="fixed bottom-4 inset-x-0 z-[60] flex flex-col items-center gap-2 pointer-events-none px-4" role="status" aria-live="polite"></div>
+
+    <!-- Application JavaScript Logic -->
+    <script>
+        'use strict';
+
+        /*
+         * =====================================================================
+         *  قواعد Firebase Realtime Database (ملف database.rules.json المرفق)
+         *  - الأقسام المسموحة: pizza / papadias / rolls_sides / salads_sauces / desserts_drinks / offers
+         *  - الأسعار بالجنيه المصري: 1 إلى 5000 للصنف/الخيار، و1 إلى 50000 لإجمالي الطلب
+         *  - ⚠️ الحماية الحالية بكلمة مرور في الواجهة فقط؛ للإنتاج فعّل Firebase Authentication
+         *    واستبدل ".write": true بـ "auth != null && auth.uid === 'UID_صاحب_المحل'"
+         * =====================================================================
+           {
+             "rules": {
+               "products": {
+                 ".read": true,
+                 ".write": true,
+                 "$id": {
+                   ".validate": "newData.hasChildren(['name','cat']) && (newData.hasChild('price') || newData.hasChild('variants') || newData.hasChild('priceMin'))",
+                   "name": {
+                     ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 80"
+                   },
+                   "nameEn": {
+                     ".validate": "newData.isString() && newData.val().length >= 0 && newData.val().length <= 80"
+                   },
+                   "price": {
+                     ".validate": "newData.isString() && newData.val().length <= 12 && newData.val().matches(/^[0-9]+(\\.[0-9]{1,2})?$/)"
+                   },
+                   "priceMin": {
+                     ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 5000"
+                   },
+                   "priceMax": {
+                     ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 5000 && newData.val() >= newData.parent().child('priceMin').val()"
+                   },
+                   "currency": {
+                     ".validate": "newData.val() === 'EGP'"
+                   },
+                   "isApproximate": {
+                     ".validate": "newData.isBoolean()"
+                   },
+                   "available": {
+                     ".validate": "newData.isBoolean()"
+                   },
+                   "priceNote": {
+                     ".validate": "newData.isString() && newData.val().length >= 0 && newData.val().length <= 200"
+                   },
+                   "cat": {
+                     ".validate": "newData.val() === 'pizza' || newData.val() === 'papadias' || newData.val() === 'rolls_sides' || newData.val() === 'salads_sauces' || newData.val() === 'desserts_drinks' || newData.val() === 'offers'"
+                   },
+                   "desc": {
+                     ".validate": "newData.isString() && newData.val().length >= 0 && newData.val().length <= 200"
+                   },
+                   "icon": {
+                     ".validate": "newData.isString() && newData.val().length >= 0 && newData.val().length <= 16"
+                   },
+                   "image": {
+                     ".validate": "newData.isString() && newData.val().length <= 150000"
+                   },
+                   "variants": {
+                     "$i": {
+                       ".validate": "newData.hasChildren(['label','price'])",
+                       "key": {
+                         ".validate": "newData.isString() && newData.val().length >= 0 && newData.val().length <= 20"
+                       },
+                       "label": {
+                         ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 40"
+                       },
+                       "price": {
+                         ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 5000"
+                       },
+                       "$other": {
+                         ".validate": false
+                       }
+                     }
+                   },
+                   "flavors": {
+                     "$i": {
+                       ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 40"
+                     }
+                   },
+                   "sizes": {
+                     "$i": {
+                       ".validate": "newData.val() === 'small' || newData.val() === 'medium' || newData.val() === 'large' || newData.val() === 'family'"
+                     }
+                   },
+                   "stuffedCrustDelta": {
+                     ".validate": "newData.hasChildren(['min','max']) && newData.child('max').val() >= newData.child('min').val()",
+                     "min": {
+                       ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000"
+                     },
+                     "max": {
+                       ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000"
+                     },
+                     "$other": {
+                       ".validate": false
+                     }
+                   },
+                   "thickCrustOrAddonsMaxPrice": {
+                     ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 5000"
+                   },
+                   "createdAt": {
+                     ".validate": "newData.isNumber()"
+                   },
+                   "updatedAt": {
+                     ".validate": "newData.isNumber()"
+                   },
+                   "$other": {
+                     ".validate": false
+                   }
+                 }
+               },
+               "orders": {
+                 ".read": false,
+                 "$id": {
+                   ".write": "!data.exists() && newData.exists()",
+                   ".validate": "newData.hasChildren(['items','total','createdAt'])",
+                   "items": {
+                     "$i": {
+                       ".validate": "newData.hasChildren(['name','price','qty'])",
+                       "name": {
+                         ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 120"
+                       },
+                       "price": {
+                         ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 5000"
+                       },
+                       "qty": {
+                         ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 50"
+                       },
+                       "$other": {
+                         ".validate": false
+                       }
+                     }
+                   },
+                   "total": {
+                     ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 50000"
+                   },
+                   "table": {
+                     ".validate": "newData.isString() && newData.val().length >= 0 && newData.val().length <= 10"
+                   },
+                   "createdAt": {
+                     ".validate": "newData.isNumber()"
+                   },
+                   "$other": {
+                     ".validate": false
+                   }
+                 }
+               },
+               "settings": {
+                 ".read": true,
+                 ".write": true,
+                 "name": {
+                   ".validate": "newData.isString() && newData.val().length >= 0 && newData.val().length <= 60"
+                 },
+                 "phone": {
+                   ".validate": "newData.isString() && newData.val().length >= 0 && newData.val().length <= 15"
+                 },
+                 "logo": {
+                   ".validate": "newData.isString() && newData.val().length <= 100000"
+                 },
+                 "headerBg": {
+                   ".validate": "newData.isString() && newData.val().length <= 200000"
+                 },
+                 "updatedAt": {
+                   ".validate": "newData.isNumber()"
+                 },
+                 "$other": {
+                   ".validate": false
+                 }
+               },
+               "customers": {
+                 ".read": true,
+                 ".write": true,
+                 "$id": {
+                   ".validate": "newData.hasChildren(['name','phone','createdAt'])",
+                   "name": {
+                     ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 60"
+                   },
+                   "phone": {
+                     ".validate": "newData.isString() && newData.val().length >= 0 && newData.val().length <= 15"
+                   },
+                   "createdAt": {
+                     ".validate": "newData.isNumber()"
+                   },
+                   "updatedAt": {
+                     ".validate": "newData.isNumber()"
+                   },
+                   "$other": {
+                     ".validate": false
+                   }
+                 }
+               },
+               "meta": {
+                 ".read": true,
+                 ".write": true,
+                 "seeded": {
+                   ".validate": "newData.isBoolean()"
+                 },
+                 "menuVersion": {
+                   ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 40"
+                 },
+                 "admin": {
+                   ".validate": "newData.hasChildren(['salt','iter','hash'])",
+                   "salt": {
+                     ".validate": "newData.isString() && newData.val().length === 32"
+                   },
+                   "iter": {
+                     ".validate": "newData.isNumber()"
+                   },
+                   "hash": {
+                     ".validate": "newData.isString() && newData.val().length === 64"
+                   },
+                   "updatedAt": {
+                     ".validate": "newData.isNumber()"
+                   },
+                   "$other": {
+                     ".validate": false
+                   }
+                 },
+                 "$other": {
+                   ".validate": false
+                 }
+               }
+             }
+           }
+         */
+
+        /* =====================================================================
+         * 1) الإعدادات والثوابت
+         * ===================================================================== */
+
+        // ضع بيانات مشروعك من: Firebase Console ← Project settings ← Your apps ← Web app
+        // إذا تُركت فارغة يعمل التطبيق تلقائياً في "الوضع المحلي" (localStorage) دون أي أخطاء.
+
+ const firebaseConfig = {
+
+    apiKey: "AIzaSyDlEkXT--o9OyH8U3DF-CGosbtf7me20BE",
+
+    authDomain: "questions2026-917ac.firebaseapp.com",
+
+    databaseURL: "https://questions2026-917ac-default-rtdb.europe-west1.firebasedatabase.app",
+
+    projectId: "questions2026-917ac",
+
+    storageBucket: "questions2026-917ac.firebasestorage.app",
+
+    messagingSenderId: "493395357197",
+
+    appId: "1:493395357197:web:e8832a7edf8c7b85092f44",
+
+    measurementId: "G-49FE2L2QQY"
+
+  };
+
+
+        const STORAGE_KEY = 'alsaeed_cafe_products';       // مفتاح الوضع المحلي (كما في الكود الأصلي)
+        const BASE_URL_KEY = 'cafe_menu_qr_base_url';      // حفظ رابط المنيو المستخدم في QR
+        const LOCK_KEY = 'cafe_admin_lock_until';          // قفل المحاولات الخاطئة لكلمة المرور
+        const CREDENTIAL_KEY = 'cafe_admin_credential';    // بيانات دخول المدير المعدّلة (الوضع المحلي)
+        const CUSTOMERS_KEY = 'cafe_customers';            // العملاء (الوضع المحلي)
+        const SETTINGS_KEY = 'cafe_settings';              // إعدادات الكافيه (الوضع المحلي)
+        const DEFAULT_CAFE_NAME = 'كافيه النيل العصري';
+        const DB_QUOTA_MB_FIREBASE = 1024;                 // حصة التخزين في الخطة المجانية (Spark)
+        const DB_QUOTA_MB_LOCAL = 5;                       // سعة localStorage التقريبية
+        const WHATSAPP_PHONE = "201095351066";             // رقم التواصل الخاص بك
+
+        // SHA-256 لكلمة المرور الافتراضية "1234" (لتغييرها: احسب SHA-256 لكلمتك وضعه هنا)
+        const ADMIN_PASSWORD_HASH = '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4';
+
+        const CATEGORIES = [
+            { id: 'pizza', ar: 'البيتزا', en: 'Pizza', icon: '🍕' },
+            { id: 'papadias', ar: 'بابادياس', en: 'Papadias', icon: '🥙' },
+            { id: 'rolls_sides', ar: 'الرولز والمقبلات الجانبية', en: 'Rolls & Sides', icon: '🍗' },
+            { id: 'salads_sauces', ar: 'السلطات والصوصات', en: 'Salads & Sauces', icon: '🥗' },
+            { id: 'desserts_drinks', ar: 'الحلويات والمشروبات', en: 'Desserts & Drinks', icon: '🍰' },
+            { id: 'offers', ar: 'العروض', en: 'Offers', icon: '🔥' }
+        ];
+        const SIZE_LABELS = { small: 'صغير', medium: 'وسط', large: 'كبير', family: 'عائلي' };
+        const VALID_CATEGORIES = CATEGORIES.map(function (c) { return c.id; });
+        const DEFAULT_DESC = 'منتج طازج وعالي الجودة';
+        const DEFAULT_ICON = '🍕';
+
+        const LIMITS = {
+            name: 80,
+            cafeName: 60,
+            customerName: 60,
+            desc: 200,
+            maxPrice: 5000,                   // أقصى سعر لصنف/خيار (ج.م)
+            maxOrderTotal: 50000,             // أقصى إجمالي طلب (ج.م)
+            variantLabel: 40,
+            rawImageBytes: 8 * 1024 * 1024,   // الحد الأقصى للملف الأصلي
+            imageMaxSide: 480,                // أكبر بُعد للصورة بعد الضغط (بكسل)
+            imageMaxChars: 90000              // الحد الأقصى لحجم نص الصورة بعد الضغط (~65KB)
+        };
+        const LOAD_TIMEOUT_MS = 10000;        // مهلة جلب البيانات الأولى
+        const SAVE_TIMEOUT_MS = 12000;        // مهلة تأكيد الحفظ من السيرفر
+        const MAX_FAILED_ATTEMPTS = 5;
+        const PBKDF2_ITERATIONS = 150000;     // عدد دورات اشتقاق مفتاح كلمة المرور
+        const MIN_PASSWORD_LENGTH = 6;
+        const MAX_PASSWORD_LENGTH = 64;
+        const LOCK_DURATION_MS = 60000;
+        const TIMEOUT = Symbol('timeout');
+
+        /**
+         * @typedef {'pizza'|'papadias'|'rolls_sides'|'salads_sauces'|'desserts_drinks'|'offers'} CategoryId
+         * @typedef {'small'|'medium'|'large'|'family'} SizeKey
+         * @typedef {{ key: string, label: string, price: number }} PriceVariant
+         * @typedef {{ min: number, max: number }} PriceDelta
+         * @typedef {Object} MenuItem
+         * @property {string} id
+         * @property {CategoryId} cat
+         * @property {string} name              الاسم بالعربية
+         * @property {string} nameEn            الاسم بالإنجليزية (اختياري)
+         * @property {string} price             أقل سعر كنص (للتوافق مع الكود/القواعد السابقة)
+         * @property {number} priceMin          أقل سعر (ج.م)
+         * @property {number} priceMax          أعلى سعر (ج.م)
+         * @property {PriceVariant[]} variants  خيارات بأسعار محددة (مثل أحجام بيبسي)
+         * @property {string[]} flavors         النكهات / الأنواع
+         * @property {SizeKey[]} sizes          الأحجام المتاحة
+         * @property {PriceDelta|null} stuffedCrustDelta           زيادة الأطراف المحشوة بالجبن
+         * @property {number} thickCrustOrAddonsMaxPrice           أعلى سعر مع العجينة السميكة/الإضافات (0 = لا يوجد)
+         * @property {string} priceNote
+         * @property {'EGP'} currency
+         * @property {boolean} isApproximate
+         * @property {boolean} available
+         */
+
+        // إصدار القائمة: عند تغييره تُعاد التعبئة تلقائياً مرة واحدة (يستبدل الأصناف القديمة)
+        const MENU_VERSION = 'papajohns-cairo-v1';
+        const MENU_VERSION_KEY = 'cafe_menu_version';       // الوضع المحلي
+
+        // قائمة بابا جونز (القاهرة) - الأسعار بالجنيه المصري وتقريبية
+        function buildDefaultProducts() {
+            const STUFFED = { min: 75, max: 100 };
+            const ALL_SIZES = ['small', 'medium', 'large', 'family'];
+            const pizza = function (name, nameEn, desc, min, max, extra) {
+                return Object.assign({ cat: 'pizza', icon: '🍕', name: name, nameEn: nameEn, desc: desc, priceMin: min, priceMax: max,
+                    sizes: ALL_SIZES.slice(), stuffedCrustDelta: STUFFED }, extra || {});
+            };
+            const item = function (cat, icon, name, nameEn, desc, min, max, extra) {
+                return Object.assign({ cat: cat, icon: icon, name: name, nameEn: nameEn, desc: desc, priceMin: min, priceMax: max || min }, extra || {});
+            };
+            const WINGS = ['أوريجينال', 'باربيكيو', 'بافلو'];
+
+            return [
+                // ---- البيتزا ----
+                pizza('مارجريتا', 'Margherita', 'السعر حسب الحجم: صغير / وسط / كبير / عائلي', 123, 360),
+                pizza('جاردن سبيشيال / تشيز برجر / هوت آند سبايسي', 'Garden Special / Cheeseburger / Hot & Spicy', 'جاردن سبيشيال (خضروات) أو تشيز برجر أو هوت آند سبايسي', 157, 298,
+                    { flavors: ['جاردن سبيشيال (خضروات)', 'تشيز برجر', 'هوت آند سبايسي'], thickCrustOrAddonsMaxPrice: 369 }),
+                pizza('بيبروني / دجاج باربيكيو / سوبر بابا دجاج', 'Pepperoni / BBQ Chicken / Super Papa Chicken', 'اختر النكهة والحجم', 178, 500,
+                    { flavors: ['بيبروني', 'دجاج باربيكيو', 'سوبر بابا دجاج'] }),
+                pizza('سوبر بابا (الأصلية)', 'Super Papa Original', 'بيتزا سوبر بابا الأصلية بالحجم الذي تفضله', 178, 535),
+                pizza('تشيكن رانش', 'Chicken Ranch', 'أوريجينال / سموكي / نكهة البيبروني / كورية حارة', 212, 550,
+                    { flavors: ['أوريجينال', 'سموكي', 'نكهة البيبروني', 'كورية حارة'] }),
+                pizza('سموكي رانش / سبايسي بيبروني رانش', 'Smoky Ranch / Spicy Pepperoni Ranch', 'اختر النكهة والحجم', 212, 377,
+                    { flavors: ['سموكي رانش', 'سبايسي بيبروني رانش'] }),
+                pizza('6 أنواع جبن', '6 Cheese', 'مزيج من ستة أنواع جبن', 208, 500),
+                pizza('بيتزا عائلي 4×4', 'Family 4x4', 'حجم عائلي: 4 أنواع في بيتزا واحدة', 460, 460, { sizes: ['family'] }),
+                item('pizza', '🧀', 'الأطراف المحشوة بالجبن (إضافة)', 'Cheese Stuffed Crust', 'زيادة تقريبية على سعر البيتزا حسب الحجم', 75, 100,
+                    { priceNote: 'زيادة تقريبية حسب الحجم' }),
+
+                // ---- بابادياس ----
+                item('papadias', '🥙', 'جاردن سبيشيال رانش', 'Garden Special Ranch', 'بابادياس بالخضروات وصوص الرانش', 130),
+                item('papadias', '🥙', 'تشيكن رانش سبايسي / سموكي دجاج', 'Spicy Chicken Ranch / Smoky Chicken', 'بابادياس دجاج بنكهتين', 170,
+                    0, { flavors: ['تشيكن رانش سبايسي', 'سموكي دجاج'] }),
+                item('papadias', '🥙', 'بيبروني وسجق إيطالي', 'Pepperoni & Italian Sausage', 'أو سبايسي إيطاليان', 200,
+                    0, { flavors: ['بيبروني وسجق إيطالي', 'سبايسي إيطاليان'] }),
+
+                // ---- الرولز والمقبلات الجانبية ----
+                item('rolls_sides', '🌯', 'رولز محشوة (8 قطع)', 'Stuffed Rolls (8 pcs)', 'تشيكن رانش، سموكي، تشيز برجر، بيبروني، ثري تشيز', 165, 170,
+                    { flavors: ['تشيكن رانش', 'سموكي', 'تشيز برجر', 'بيبروني', 'ثري تشيز'] }),
+                item('rolls_sides', '📦', 'بوكس تشكيلة الرولز (32 قطعة)', 'Rolls Assortment Box (32 pcs)', 'تشكيلة متنوعة من الرولز المحشوة', 509),
+                item('rolls_sides', '🧀', 'أصابع الجبنة', 'Cheese Sticks', 'أصابع جبنة مقرمشة', 86),
+                item('rolls_sides', '🍗', 'دجاج بوبرز / تندرز (9 قطع)', 'Chicken Poppers / Tenders (9 pcs)', 'أوريجينال أو باربيكيو أو بافلو', 188, 0, { flavors: WINGS }),
+                item('rolls_sides', '🍗', 'أجنحة دجاج مشوية (6 قطع)', 'Grilled Chicken Wings (6 pcs)', 'أجنحة دجاج مشوية', 140),
+                item('rolls_sides', '🍗', 'أجنحة دجاج مشوية (10 قطع)', 'Grilled Chicken Wings (10 pcs)', 'أوريجينال أو باربيكيو أو بافلو', 226, 0, { flavors: WINGS }),
+
+                // ---- السلطات والصوصات ----
+                item('salads_sauces', '🥗', 'سلطة', 'Salad', 'كول سلو / بطاطس بالمايونيز / فاصوليا خضراء', 48, 0,
+                    { flavors: ['كول سلو', 'بطاطس بالمايونيز', 'فاصوليا خضراء'] }),
+                item('salads_sauces', '🥗', 'بوكس السلطة', 'Salad Box', '3 أنواع سلطة + هالبينو + صوص كوكتيل', 155),
+                item('salads_sauces', '🥫', 'صوصات إضافية', 'Extra Sauces', 'رانش / جارليك / سبايسي جارليك / باربيكيو', 25, 0,
+                    { flavors: ['رانش', 'جارليك', 'سبايسي جارليك', 'باربيكيو'] }),
+                item('salads_sauces', '🥫', 'صوص كوكتيل إضافي', 'Extra Cocktail Sauce', 'صوص كوكتيل', 18),
+
+                // ---- الحلويات والمشروبات ----
+                item('desserts_drinks', '🍫', 'رولز الشوكولاتة (8 قطع)', 'Chocolate Rolls (8 pcs)', 'رولز محشوة بالشوكولاتة', 79),
+                item('desserts_drinks', '🥧', 'فطيرة الشوكولاتة', 'Chocolate Pie', 'فطيرة بالشوكولاتة', 95),
+                item('desserts_drinks', '🍪', 'رولز كوكيز آند كريم (8 قطع)', 'Cookies & Cream Rolls (8 pcs)', 'رولز بنكهة الكوكيز والكريمة', 110),
+                item('desserts_drinks', '🥤', 'بيبسي', 'Pepsi', 'اختر الحجم', 30, 60,
+                    { variants: [{ key: 'ml250', label: '250 مل', price: 30 }, { key: 'ml400', label: '400 مل', price: 40 }, { key: 'l1', label: '1 لتر', price: 60 }] }),
+                item('desserts_drinks', '💧', 'مياه معدنية صغيرة', 'Small Mineral Water', 'مياه معدنية', 20),
+
+                // ---- العروض ----
+                item('offers', '🔥', 'عرض الفرد (Papa Single)', 'Papa Single', 'بيتزا صغيرة + بطاطس ويدجز + مشروب 250 مل', 200),
+                item('offers', '🔥', 'عرض بابا دبل وسط', 'Papa Double Medium', '2 بيتزا وسط من اختيارك', 435),
+                item('offers', '🔥', 'عرض بابا دبل كبير', 'Papa Double Large', '2 بيتزا كبيرة من اختيارك', 635),
+                item('offers', '🔥', 'عرض بابا اللمة', 'Papa Lamma', 'بيتزا عائلية + 2 رولز شوكولاتة أو تمر + بيبسي 1 لتر', 660)
+            ].map(function (p) {
+                return Object.assign({ currency: 'EGP', isApproximate: true, available: true }, p);
+            });
+        }
+        const defaultProducts = buildDefaultProducts();
+
+        /* =====================================================================
+         * 2) حالة التطبيق (State)
+         * ===================================================================== */
+        let currentCategory = 'all';
+        let productsCache = [];        // نسخة المنتجات الحالية (تتحدث لحظياً)
+        let isLoading = true;          // جاري الجلب الأول من السيرفر
+        let loadError = '';            // رسالة خطأ التحميل (إن وجدت)
+        let loadTimer = null;
+        let seedAttempted = false;
+        let adminUnlocked = false;     // هل تم تسجيل دخول الإدارة؟
+        let isSaving = false;
+        let imageProcessing = false;
+        let failedAttempts = 0;
+        let store = null;              // طبقة البيانات (Firebase أو محلي)
+        let storeMode = 'local';       // 'firebase' | 'local'
+
+        // إعدادات الكافيه (اسم/هاتف/شعار/خلفية) - تتحدث لحظياً
+        let settingsCache = { name: '', phone: '', logo: '', headerBg: '', updatedAt: 0 };
+        let settingsLoaded = false;
+        let settingsFormFilled = false;
+        let settingsUnsub = null;
+
+        // العملاء - لا تُحمَّل إلا بعد دخول المدير
+        let customersCache = [];
+        let customersLoaded = false;
+        let customersError = '';
+        let customersUnsub = null;
+        let customersTimer = null;
+
+        // أحجام البيانات (بالبايت) لحساب استهلاك قاعدة البيانات تقديرياً
+        let productsBytes = 0;
+        let customersBytes = 0;
+        let settingsBytes = 0;
+
+        /* =====================================================================
+         * 3) دوال مساعدة (Utilities)
+         * ===================================================================== */
+
+        // تهريب النصوص لمنع حقن HTML/XSS
+        function escapeHTML(value) {
+            return String(value === null || value === undefined ? '' : value).replace(/[&<>"']/g, function (ch) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
+            });
+        }
+
+        // وصول آمن لـ localStorage (قد يكون معطلاً في التصفح الخاص)
+        const safeStorage = {
+            get: function (key) {
+                try { return localStorage.getItem(key); } catch (e) { return null; }
+            },
+            set: function (key, value) {
+                try { localStorage.setItem(key, value); return true; } catch (e) { return false; }
+            }
+        };
+
+        // قبول الصور المضمّنة (data URI) فقط من أنواع معروفة لمنع روابط خطرة
+        function sanitizeImage(src) {
+            if (typeof src !== 'string' || !src || src.length > 400000) return '';
+            return /^data:image\/(jpeg|png|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(src) ? src : '';
+        }
+
+        function toNumber(v) { const n = Number(v); return isFinite(n) ? n : 0; }
+        function cleanText(v, max) { return String(v === undefined || v === null ? '' : v).trim().slice(0, max); }
+        function latinDigits(s) {
+            return String(s).replace(/[\u0660-\u0669]/g, function (ch) { return String(ch.charCodeAt(0) - 0x0660); })
+                            .replace(/[\u06F0-\u06F9]/g, function (ch) { return String(ch.charCodeAt(0) - 0x06F0); });
+        }
+        // Firebase يعيد المصفوفات ككائنات أحياناً؛ نوحّدها هنا
+        function asArray(v) {
+            if (Array.isArray(v)) return v;
+            return v && typeof v === 'object' ? Object.keys(v).map(function (k) { return v[k]; }) : [];
+        }
+
+        function normalizeVariants(raw) {
+            return asArray(raw).map(function (v, i) {
+                const label = cleanText(v && v.label, LIMITS.variantLabel);
+                const price = toNumber(v && v.price);
+                if (!label || price < 1 || price > LIMITS.maxPrice) return null;
+                return { key: cleanText(v.key, 20) || ('v' + (i + 1)), label: label, price: price };
+            }).filter(Boolean).slice(0, 12);
+        }
+
+        // توحيد شكل المنتج القادم من أي مصدر والتحقق من صحته (يتجاهل الأقسام القديمة غير المعتمدة)
+        function normalizeProduct(raw, id) {
+            if (!raw || typeof raw !== 'object') return null;
+            const name = cleanText(raw.name, LIMITS.name);
+            if (!name) return null;
+            if (VALID_CATEGORIES.indexOf(raw.cat) === -1) return null;
+
+            const variants = normalizeVariants(raw.variants);
+            let min = toNumber(raw.priceMin) || toNumber(raw.price);
+            let max = toNumber(raw.priceMax);
+            if (variants.length) {
+                const prices = variants.map(function (v) { return v.price; });
+                min = Math.min.apply(null, prices);
+                max = Math.max.apply(null, prices);
+            }
+            min = Math.min(Math.max(min, 0), LIMITS.maxPrice);
+            max = Math.min(Math.max(max, min), LIMITS.maxPrice);
+
+            const sd = raw.stuffedCrustDelta;
+            const sMin = toNumber(sd && sd.min);
+            const sMax = toNumber(sd && sd.max);
+            const stuffed = sd && sMax > 0 && sMax >= sMin && sMax <= 1000 ? { min: sMin, max: sMax } : null;
+            const thick = toNumber(raw.thickCrustOrAddonsMaxPrice);
+
+            return {
+                id: String(id),
+                name: name,
+                nameEn: cleanText(raw.nameEn, LIMITS.name),
+                price: String(min),
+                priceMin: min,
+                priceMax: max,
+                variants: variants,
+                flavors: asArray(raw.flavors).map(function (x) { return cleanText(x, LIMITS.variantLabel); }).filter(Boolean).slice(0, 12),
+                sizes: asArray(raw.sizes).filter(function (k) { return SIZE_LABELS[k]; }).slice(0, 4),
+                stuffedCrustDelta: stuffed,
+                thickCrustOrAddonsMaxPrice: thick >= 1 && thick <= LIMITS.maxPrice ? thick : 0,
+                priceNote: cleanText(raw.priceNote, LIMITS.desc),
+                currency: 'EGP',
+                isApproximate: raw.isApproximate !== false,
+                available: raw.available !== false,
+                cat: raw.cat,
+                desc: cleanText(raw.desc, LIMITS.desc) || DEFAULT_DESC,
+                icon: cleanText(raw.icon, 16) || DEFAULT_ICON,
+                image: sanitizeImage(raw.image),
+                createdAt: Number(raw.createdAt) || 0
+            };
+        }
+
+        function sortProducts(list) {
+            return list.sort(function (a, b) {
+                if (a.createdAt !== b.createdAt) return a.createdAt - b.createdAt;
+                return a.id < b.id ? -1 : (a.id > b.id ? 1 : 0);
+            });
+        }
+
+        // التحقق من شكل سجل بيانات دخول المدير المخزّن
+        function isValidCredential(rec) {
+            return !!rec && typeof rec === 'object' &&
+                typeof rec.salt === 'string' && /^[0-9a-f]{32}$/.test(rec.salt) &&
+                typeof rec.hash === 'string' && /^[0-9a-f]{64}$/.test(rec.hash) &&
+                typeof rec.iter === 'number' && rec.iter >= 10000 && rec.iter <= 1000000;
+        }
+
+        function bytesToHex(bytes) {
+            return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+
+        function hexToBytes(hex) {
+            const out = new Uint8Array(hex.length / 2);
+            for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.substr(i * 2, 2), 16);
+            return out;
+        }
+
+        // اشتقاق بصمة كلمة المرور بخوارزمية PBKDF2-SHA256 (أقوى من SHA-256 المجرد)
+        async function pbkdf2Hex(password, saltHex, iterations) {
+            const keyMaterial = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']);
+            const bits = await crypto.subtle.deriveBits(
+                { name: 'PBKDF2', hash: 'SHA-256', salt: hexToBytes(saltHex), iterations: iterations },
+                keyMaterial, 256
+            );
+            return bytesToHex(new Uint8Array(bits));
+        }
+
+        // مقارنة نصين بزمن ثابت
+        function constantTimeEqual(a, b) {
+            let diff = a.length ^ b.length;
+            for (let i = 0; i < b.length; i++) diff |= (a.charCodeAt(i) || 0) ^ b.charCodeAt(i);
+            return diff === 0;
+        }
+
+        // توحيد رقم الهاتف إلى الصيغة الدولية (أرقام فقط) - يعيد '' إذا كان غير صالح
+        function normalizePhone(input) {
+            let d = String(input === undefined || input === null ? '' : input).replace(/[\s\-().]/g, '');
+            // تحويل الأرقام العربية/الفارسية إلى لاتينية
+            d = d.replace(/[\u0660-\u0669]/g, ch => String(ch.charCodeAt(0) - 0x0660))
+                 .replace(/[\u06F0-\u06F9]/g, ch => String(ch.charCodeAt(0) - 0x06F0));
+            if (d.charAt(0) === '+') d = d.slice(1);
+            else if (d.slice(0, 2) === '00') d = d.slice(2);
+            else if (/^01\d{9}$/.test(d)) d = '20' + d.slice(1);   // رقم مصري محلي
+            return /^\d{8,15}$/.test(d) ? d : '';
+        }
+
+        // تنسيق التاريخ للعرض
+        function formatDate(ts) {
+            const d = new Date(Number(ts));
+            if (!ts || isNaN(d.getTime())) return '—';
+            try {
+                return d.toLocaleDateString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric' });
+            } catch (e) {
+                return d.toISOString().slice(0, 10);
+            }
+        }
+
+        function formatNumber(n) {
+            try { return Number(n).toLocaleString('en-US'); } catch (e) { return String(n); }
+        }
+
+        function formatMB(bytes) {
+            const mb = bytes / 1048576;
+            return mb < 0.1 ? mb.toFixed(3) : mb.toFixed(2);
+        }
+
+        // حجم كائن بالبايت (UTF-8) بعد تحويله إلى JSON
+        function jsonBytes(value) {
+            try { return new TextEncoder().encode(JSON.stringify(value)).length; } catch (e) { return 0; }
+        }
+
+        // توحيد شكل العميل القادم من أي مصدر
+        function normalizeCustomer(raw, id) {
+            if (!raw || typeof raw !== 'object' || !id) return null;
+            const name = String(raw.name === undefined || raw.name === null ? '' : raw.name).trim().slice(0, LIMITS.customerName);
+            if (!name) return null;
+            return { id: String(id), name: name, phone: normalizePhone(raw.phone), createdAt: Number(raw.createdAt) || 0 };
+        }
+
+        // الأحدث تسجيلاً أولاً
+        function sortCustomers(list) {
+            return list.sort(function (a, b) {
+                if (a.createdAt !== b.createdAt) return b.createdAt - a.createdAt;
+                return a.id < b.id ? -1 : (a.id > b.id ? 1 : 0);
+            });
+        }
+
+        // توحيد شكل إعدادات الكافيه
+        function normalizeSettings(raw) {
+            const r = raw && typeof raw === 'object' ? raw : {};
+            return {
+                name: String(r.name === undefined || r.name === null ? '' : r.name).trim().slice(0, LIMITS.cafeName),
+                phone: normalizePhone(r.phone),
+                logo: sanitizeImage(r.logo),
+                headerBg: sanitizeImage(r.headerBg),
+                updatedAt: Number(r.updatedAt) || 0
+            };
+        }
+
+        // سباق بين وعد ومهلة زمنية (يعيد TIMEOUT عند انتهاء المهلة)
+        function withTimeout(promise, ms) {
+            return new Promise(function (resolve, reject) {
+                const timer = setTimeout(function () { resolve(TIMEOUT); }, ms);
+                Promise.resolve(promise).then(
+                    function (value) { clearTimeout(timer); resolve(value); },
+                    function (error) { clearTimeout(timer); reject(error); }
+                );
+            });
+        }
+
+        // رسالة خطأ مفهومة للمستخدم
+        function friendlyError(err) {
+            const code = err && (err.code || err.message) ? String(err.code || err.message) : '';
+            if (code.toUpperCase().indexOf('PERMISSION_DENIED') !== -1) return 'ليس لديك صلاحية على قاعدة البيانات. راجع قواعد Firebase.';
+            if (code === 'storage-failed') return 'تعذر الحفظ محلياً (مساحة التخزين ممتلئة أو معطلة). جرّب صورة أصغر.';
+            if (code.toLowerCase().indexOf('network') !== -1) return 'مشكلة في الاتصال بالإنترنت. حاول مرة أخرى.';
+            return 'حدث خطأ غير متوقع. حاول مرة أخرى.';
+        }
+
+        // إشعار منبثق (Toast)
+        function showToast(message, type) {
+            const container = document.getElementById('toast-container');
+            if (!container) return;
+            const colors = {
+                success: 'bg-emerald-600 text-white',
+                error: 'bg-rose-600 text-white',
+                info: 'bg-slate-800 text-slate-100 border border-slate-700'
+            };
+            const toast = document.createElement('div');
+            toast.className = 'toast-enter pointer-events-auto max-w-sm w-full text-center text-xs font-bold px-4 py-2.5 rounded-xl shadow-xl ' + (colors[type] || colors.info);
+            toast.textContent = message;
+            container.appendChild(toast);
+            setTimeout(function () {
+                toast.remove();
+            }, 3800);
+        }
+
+        // رقم الطاولة من رابط الصفحة (?table=5) بعد التحقق منه
+        function getTableFromURL() {
+            try {
+                const value = new URLSearchParams(window.location.search).get('table');
+                if (value && /^[0-9A-Za-z\u0600-\u06FF-]{1,10}$/.test(value)) return value;
+            } catch (e) { /* تجاهل */ }
+            return '';
+        }
+
+        /* =====================================================================
+         * 4) طبقة البيانات (Data Layer)
+         *    واجهة موحدة: subscribe / create / update / remove / replaceAll / seedIfNeeded
+         * ===================================================================== */
+
+        // ---- (أ) الوضع المحلي: localStorage (احتياطي عند غياب إعدادات Firebase) ----
+        function createLocalStore() {
+            let onDataCb = null;
+
+            function makeLocalId(i) {
+                return 'local_' + Date.now().toString(36) + '_' + i + '_' + Math.random().toString(36).slice(2, 6);
+            }
+
+            // قراءة كل المنتجات (وإنشاء الافتراضية عند أول تشغيل)
+            function readAll() {
+                const raw = safeStorage.get(STORAGE_KEY);
+                if (raw === null || safeStorage.get(MENU_VERSION_KEY) !== MENU_VERSION) {
+                    const seeded = defaultProducts.map(function (p, i) {
+                        return normalizeProduct(Object.assign({}, p, { createdAt: i + 1 }), makeLocalId(i));
+                    });
+                    safeStorage.set(STORAGE_KEY, JSON.stringify(seeded));
+                    safeStorage.set(MENU_VERSION_KEY, MENU_VERSION);
+                    return seeded;
+                }
+                try {
+                    const parsed = JSON.parse(raw);
+                    if (!Array.isArray(parsed)) return [];
+                    let needsRewrite = false;
+                    const list = parsed.map(function (p, i) {
+                        let id = p && p.id;
+                        if (!id) { id = makeLocalId(i); needsRewrite = true; }
+                        const item = normalizeProduct(Object.assign({ createdAt: i + 1 }, p), id);
+                        return item;
+                    }).filter(Boolean);
+                    if (needsRewrite) safeStorage.set(STORAGE_KEY, JSON.stringify(list));
+                    return sortProducts(list);
+                } catch (e) {
+                    return [];
+                }
+            }
+
+            function writeAll(list) {
+                if (!safeStorage.set(STORAGE_KEY, JSON.stringify(list))) {
+                    throw new Error('storage-failed');
+                }
+                if (onDataCb) onDataCb(sortProducts(list.slice()));
+            }
+
+            // ---- العملاء والإعدادات (الوضع المحلي) ----
+            let customersCb = null;
+            let settingsCb = null;
+
+            function readCustomers() {
+                const raw = safeStorage.get(CUSTOMERS_KEY);
+                if (raw === null) return [];
+                try {
+                    const parsed = JSON.parse(raw);
+                    if (!Array.isArray(parsed)) return [];
+                    return sortCustomers(parsed.map(function (c) { return normalizeCustomer(c, c && c.id); }).filter(Boolean));
+                } catch (e) { return []; }
+            }
+
+            function writeCustomers(list) {
+                if (!safeStorage.set(CUSTOMERS_KEY, JSON.stringify(list))) throw new Error('storage-failed');
+                if (customersCb) customersCb(sortCustomers(list.slice()));
+            }
+
+            function readSettings() {
+                const raw = safeStorage.get(SETTINGS_KEY);
+                if (raw === null) return normalizeSettings({});
+                try { return normalizeSettings(JSON.parse(raw)); } catch (e) { return normalizeSettings({}); }
+            }
+
+            return {
+                subscribe: function (onData, onError, onConnection) {
+                    onDataCb = onData;
+                    if (onConnection) onConnection(null);
+                    setTimeout(function () {
+                        try { onData(readAll()); } catch (e) { onError(e); }
+                    }, 0);
+                    // مزامنة بين تبويبات المتصفح
+                    window.addEventListener('storage', function (e) {
+                        if (e.key === STORAGE_KEY) onData(readAll());
+                    });
+                },
+                create: function (data) {
+                    return new Promise(function (resolve) {
+                        const list = readAll();
+                        const id = makeLocalId(list.length);
+                        list.push(normalizeProduct(Object.assign({}, data, { createdAt: Date.now() }), id));
+                        writeAll(list);
+                        resolve(id);
+                    });
+                },
+                update: function (id, data) {
+                    return new Promise(function (resolve) {
+                        const list = readAll().map(function (p) {
+                            return p.id === id ? normalizeProduct(Object.assign({}, data, { createdAt: p.createdAt }), id) : p;
+                        });
+                        writeAll(list);
+                        resolve();
+                    });
+                },
+                remove: function (id) {
+                    return new Promise(function (resolve) {
+                        writeAll(readAll().filter(function (p) { return p.id !== id; }));
+                        resolve();
+                    });
+                },
+                replaceAll: function (products) {
+                    return new Promise(function (resolve) {
+                        const list = products.map(function (p, i) {
+                            return normalizeProduct(Object.assign({ createdAt: i + 1 }, p), p.id || makeLocalId(i));
+                        }).filter(Boolean);
+                        writeAll(list);
+                        resolve();
+                    });
+                },
+                seedIfNeeded: function () { return Promise.resolve(); },   // تتم التعبئة داخل readAll
+                // استعادة قائمة بابا جونز الافتراضية (تستبدل كل الأصناف)
+                resetMenu: function () {
+                    return new Promise(function (resolve) {
+                        const list = defaultProducts.map(function (p, i) {
+                            return normalizeProduct(Object.assign({}, p, { createdAt: i + 1 }), makeLocalId(i));
+                        });
+                        writeAll(list);
+                        safeStorage.set(MENU_VERSION_KEY, MENU_VERSION);
+                        resolve();
+                    });
+                },
+
+                // ---- العملاء ----
+                subscribeCustomers: function (onData, onError) {
+                    customersCb = onData;
+                    const onStorage = function (e) { if (e.key === CUSTOMERS_KEY) onData(readCustomers()); };
+                    window.addEventListener('storage', onStorage);
+                    setTimeout(function () {
+                        if (customersCb !== onData) return;
+                        try { onData(readCustomers()); } catch (e) { onError(e); }
+                    }, 0);
+                    return function () { customersCb = null; window.removeEventListener('storage', onStorage); };
+                },
+                createCustomer: function (data) {
+                    return new Promise(function (resolve) {
+                        const list = readCustomers();
+                        const id = makeLocalId(list.length);
+                        list.push(normalizeCustomer({ name: data.name, phone: data.phone, createdAt: Date.now() }, id));
+                        writeCustomers(list);
+                        resolve(id);
+                    });
+                },
+                updateCustomer: function (id, data) {
+                    return new Promise(function (resolve) {
+                        writeCustomers(readCustomers().map(function (c) {
+                            return c.id === id ? normalizeCustomer({ name: data.name, phone: data.phone, createdAt: c.createdAt }, id) : c;
+                        }));
+                        resolve();
+                    });
+                },
+                removeCustomer: function (id) {
+                    return new Promise(function (resolve) {
+                        writeCustomers(readCustomers().filter(function (c) { return c.id !== id; }));
+                        resolve();
+                    });
+                },
+
+                // ---- إعدادات الكافيه ----
+                subscribeSettings: function (onData, onError) {
+                    settingsCb = onData;
+                    const onStorage = function (e) { if (e.key === SETTINGS_KEY) onData(readSettings()); };
+                    window.addEventListener('storage', onStorage);
+                    setTimeout(function () {
+                        if (settingsCb !== onData) return;
+                        try { onData(readSettings()); } catch (e) { onError(e); }
+                    }, 0);
+                    return function () { settingsCb = null; window.removeEventListener('storage', onStorage); };
+                },
+                saveSettings: function (data) {
+                    return new Promise(function (resolve) {
+                        const settings = normalizeSettings(Object.assign({}, data, { updatedAt: Date.now() }));
+                        if (!safeStorage.set(SETTINGS_KEY, JSON.stringify(settings))) throw new Error('storage-failed');
+                        if (settingsCb) settingsCb(settings);
+                        resolve();
+                    });
+                },
+
+                // بيانات دخول المدير (null = لم تُعدَّل بعد، أي تُستخدم كلمة المرور الافتراضية)
+                getAdminCredential: function () {
+                    return new Promise(function (resolve, reject) {
+                        const raw = safeStorage.get(CREDENTIAL_KEY);
+                        if (raw === null) { resolve(null); return; }
+                        try {
+                            const rec = JSON.parse(raw);
+                            if (isValidCredential(rec)) resolve(rec); else reject(new Error('invalid-credential'));
+                        } catch (e) { reject(new Error('invalid-credential')); }
+                    });
+                },
+                setAdminCredential: function (record) {
+                    return new Promise(function (resolve, reject) {
+                        if (safeStorage.set(CREDENTIAL_KEY, JSON.stringify(record))) resolve(); else reject(new Error('storage-failed'));
+                    });
+                }
+            };
+        }
+
+        // ---- (ب) Firebase Realtime Database (SDK v8) ----
+        function createFirebaseStore(db) {
+            const productsRef = db.ref('products');
+            const TS = firebase.database.ServerValue.TIMESTAMP;
+
+            // تجهيز البيانات للكتابة (قيمة null تحذف الحقل من القاعدة)
+            function toPayload(data) {
+                const n = normalizeProduct(data, 'tmp');
+                if (!n) throw new Error('invalid-product');
+                return {
+                    name: n.name,
+                    nameEn: n.nameEn || null,
+                    price: n.price,
+                    priceMin: n.priceMin,
+                    priceMax: n.priceMax,
+                    currency: 'EGP',
+                    isApproximate: n.isApproximate,
+                    available: n.available,
+                    priceNote: n.priceNote || null,
+                    cat: n.cat,
+                    desc: n.desc,
+                    icon: n.icon,
+                    image: n.image ? n.image : null,
+                    variants: n.variants.length ? n.variants : null,
+                    flavors: n.flavors.length ? n.flavors : null,
+                    sizes: n.sizes.length ? n.sizes : null,
+                    stuffedCrustDelta: n.stuffedCrustDelta,
+                    thickCrustOrAddonsMaxPrice: n.thickCrustOrAddonsMaxPrice || null,
+                    updatedAt: TS
+                };
+            }
+
+            // بناء كائن التعبئة الكامل (مفاتيح جديدة + ترتيب الإنشاء)
+            function buildUpdates(defaults) {
+                const updates = {};
+                const base = Date.now();
+                defaults.forEach(function (p, i) {
+                    const payload = toPayload(p);
+                    payload.createdAt = base + i;
+                    updates[productsRef.push().key] = payload;
+                });
+                return updates;
+            }
+
+            return {
+                subscribe: function (onData, onError, onConnection) {
+                    // الاستماع اللحظي لأي تغيير في المنتجات
+                    productsRef.on('value', function (snapshot) {
+                        const val = snapshot.val();
+                        const list = [];
+                        if (val && typeof val === 'object') {
+                            Object.keys(val).forEach(function (id) {
+                                try {
+                                    const item = normalizeProduct(val[id], id);
+                                    if (item) list.push(item);
+                                } catch (e) { console.warn('تم تجاهل منتج تالف:', id, e); }
+                            });
+                        }
+                        onData(sortProducts(list));
+                    }, function (err) { onError(err); });
+
+                    // مراقبة حالة الاتصال بالسيرفر
+                    db.ref('.info/connected').on('value', function (snap) {
+                        if (onConnection) onConnection(snap.val() === true);
+                    });
+                },
+                create: function (data) {
+                    const newRef = productsRef.push();
+                    const payload = toPayload(data);
+                    payload.createdAt = TS;
+                    return newRef.set(payload).then(function () { return newRef.key; });
+                },
+                update: function (id, data) {
+                    return productsRef.child(id).update(toPayload(data));
+                },
+                remove: function (id) {
+                    return productsRef.child(id).remove();
+                },
+                replaceAll: function (products) {
+                    const updates = {};
+                    products.forEach(function (p) {
+                        const key = p.id || productsRef.push().key;
+                        const payload = toPayload(p);
+                        payload.createdAt = p.createdAt || TS;
+                        updates[key] = payload;
+                    });
+                    return productsRef.set(updates);
+                },
+                // تعبئة قائمة بابا جونز مرة واحدة لكل إصدار (معاملة ذرية لتفادي التكرار)
+                seedIfNeeded: function (defaults) {
+                    return new Promise(function (resolve) {
+                        db.ref('meta/menuVersion').transaction(function (current) {
+                            return current === MENU_VERSION ? undefined : MENU_VERSION;
+                        }, function (error, committed) {
+                            if (error || !committed) { resolve(); return; }
+                            productsRef.set(buildUpdates(defaults)).then(resolve, function (e) { console.error(e); resolve(); });
+                        });
+                    });
+                },
+                // استعادة القائمة الافتراضية (تستبدل كل الأصناف)
+                resetMenu: function (defaults) {
+                    return productsRef.set(buildUpdates(defaults)).then(function () {
+                        return db.ref('meta/menuVersion').set(MENU_VERSION);
+                    });
+                },
+                // ---- العملاء (Realtime) ----
+                subscribeCustomers: function (onData, onError) {
+                    const ref = db.ref('customers');
+                    const handler = ref.on('value', function (snapshot) {
+                        const val = snapshot.val();
+                        const list = [];
+                        if (val && typeof val === 'object') {
+                            Object.keys(val).forEach(function (id) {
+                                try {
+                                    const item = normalizeCustomer(val[id], id);
+                                    if (item) list.push(item);
+                                } catch (e) { console.warn('تم تجاهل عميل تالف:', id, e); }
+                            });
+                        }
+                        onData(sortCustomers(list));
+                    }, function (err) { onError(err); });
+                    return function () { ref.off('value', handler); };
+                },
+                createCustomer: function (data) {
+                    const newRef = db.ref('customers').push();
+                    return newRef.set({ name: data.name, phone: data.phone, createdAt: TS }).then(function () { return newRef.key; });
+                },
+                updateCustomer: function (id, data) {
+                    return db.ref('customers').child(id).update({ name: data.name, phone: data.phone, updatedAt: TS });
+                },
+                removeCustomer: function (id) {
+                    return db.ref('customers').child(id).remove();
+                },
+
+                // ---- إعدادات الكافيه (Realtime) ----
+                subscribeSettings: function (onData, onError) {
+                    const ref = db.ref('settings');
+                    const handler = ref.on('value', function (snapshot) {
+                        onData(normalizeSettings(snapshot.val()));
+                    }, function (err) { onError(err); });
+                    return function () { ref.off('value', handler); };
+                },
+                saveSettings: function (data) {
+                    return db.ref('settings').set({
+                        name: data.name,
+                        phone: data.phone,
+                        logo: data.logo ? data.logo : null,
+                        headerBg: data.headerBg ? data.headerBg : null,
+                        updatedAt: TS
+                    });
+                },
+
+                // بيانات دخول المدير تُحفظ في السحابة لتعمل من أي جهاز
+                getAdminCredential: function () {
+                    return db.ref('meta/admin').once('value').then(function (snap) {
+                        if (!snap.exists()) return null;
+                        const rec = snap.val();
+                        if (!isValidCredential(rec)) throw new Error('invalid-credential');
+                        return rec;
+                    });
+                },
+                setAdminCredential: function (record) {
+                    return db.ref('meta/admin').set({
+                        salt: record.salt,
+                        iter: record.iter,
+                        hash: record.hash,
+                        updatedAt: TS
+                    });
+                }
+            };
+        }
+
+        // اختيار طبقة البيانات المناسبة تلقائياً
+        function initDataStore() {
+            const configured = !!(firebaseConfig.apiKey && firebaseConfig.databaseURL);
+            if (configured && typeof firebase !== 'undefined') {
+                try {
+                    if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+                    store = createFirebaseStore(firebase.database());
+                    storeMode = 'firebase';
+                    return;
+                } catch (err) {
+                    console.error('فشل تهيئة Firebase، سيتم استخدام الوضع المحلي:', err);
+                    showToast('تعذر الاتصال بـ Firebase، تم التحويل للوضع المحلي.', 'error');
+                }
+            } else if (configured) {
+                console.error('مكتبة Firebase لم تُحمّل (تحقق من الاتصال)، سيتم استخدام الوضع المحلي.');
+            }
+            store = createLocalStore();
+            storeMode = 'local';
+        }
+
+        // بدء المزامنة اللحظية
+        function startSync() {
+            isLoading = true;
+            loadError = '';
+            renderMenu();
+
+            clearTimeout(loadTimer);
+            loadTimer = setTimeout(function () {
+                if (isLoading) {
+                    loadError = 'تعذر تحميل القائمة. تحقق من اتصال الإنترنت ثم أعد المحاولة.';
+                    renderMenu();
+                }
+            }, LOAD_TIMEOUT_MS);
+
+            store.subscribe(onProductsChanged, onSyncError, setSyncStatus);
+            startSettingsSync();
+        }
+
+        function onProductsChanged(list) {
+            clearTimeout(loadTimer);
+            isLoading = false;
+            loadError = '';
+            productsCache = list;
+            productsBytes = jsonBytes(list);
+
+            // أول تشغيل على قاعدة بيانات فارغة: تعبئة المنتجات الافتراضية مرة واحدة
+            if (list.length === 0 && !seedAttempted) {
+                seedAttempted = true;
+                store.seedIfNeeded(defaultProducts).catch(function (e) { console.error(e); });
+            }
+
+            renderMenu();
+            renderStats();
+            if (adminUnlocked) renderAdminList();
+        }
+
+        function onSyncError(err) {
+            console.error('خطأ في المزامنة:', err);
+            clearTimeout(loadTimer);
+            isLoading = false;
+            loadError = friendlyError(err);
+            renderMenu();
+            renderStats();
+        }
+
+        function retryLoad() {
+            window.location.reload();
+        }
+
+        // عرض حالة الاتصال داخل لوحة التحكم
+        function setSyncStatus(connected) {
+            const el = document.getElementById('sync-status');
+            if (!el) return;
+            let dot = 'bg-amber-400';
+            let text = 'الوضع المحلي: البيانات محفوظة على هذا الجهاز فقط (أضف إعدادات Firebase للمزامنة).';
+            if (storeMode === 'firebase') {
+                if (connected === true) { dot = 'bg-emerald-400'; text = 'متصل بالسحابة - التحديثات لحظية'; }
+                else { dot = 'bg-rose-400'; text = 'غير متصل - ستُرسل التعديلات عند عودة الاتصال'; }
+            }
+            el.innerHTML = '<span class="w-2 h-2 rounded-full ' + dot + ' flex-shrink-0"></span><span>' + escapeHTML(text) + '</span>';
+        }
+
+        /* =====================================================================
+         * 5) دوال المنتجات (محافظة على أسماء الدوال الأصلية)
+         * ===================================================================== */
+
+        // Get products (من النسخة اللحظية المحفوظة في الذاكرة)
+        function getProducts() {
+            return productsCache;
+        }
+
+        // Save products (استبدال كامل القائمة)
+        function saveProducts(products) {
+            return store.replaceAll(products);
+        }
+
+        /* =====================================================================
+         * 6) عرض المنيو للعملاء
+         * ===================================================================== */
+
+        // هيكل تحميل عظمي (Skeleton) لبطاقة منتج
+        function skeletonCard() {
+            return '<div class="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-4 flex items-center gap-4 animate-pulse" aria-hidden="true">' +
+                '<div class="w-20 h-20 bg-slate-800 rounded-xl flex-shrink-0"></div>' +
+                '<div class="flex-grow space-y-3">' +
+                '<div class="h-4 bg-slate-800 rounded w-2/3"></div>' +
+                '<div class="h-3 bg-slate-800 rounded w-full"></div>' +
+                '<div class="flex items-center justify-between"><div class="h-4 bg-slate-800 rounded w-16"></div><div class="h-7 bg-slate-800 rounded-lg w-20"></div></div>' +
+                '</div></div>';
+        }
+
+        // عند فشل تحميل صورة نستبدلها بالإيموجي
+        function attachImageFallback(root) {
+            root.querySelectorAll('img[data-fallback]').forEach(function (img) {
+                img.addEventListener('error', function () {
+                    const holder = img.parentElement;
+                    if (holder) holder.textContent = img.getAttribute('data-fallback') || DEFAULT_ICON;
+                }, { once: true });
+            });
+        }
+
+        // محتوى مربع الصورة (صورة مرفوعة أو إيموجي)
+        function mediaHTML(p) {
+            if (p.image) {
+                return '<img src="' + p.image + '" alt="' + escapeHTML(p.name) + '" data-fallback="' + escapeHTML(p.icon || DEFAULT_ICON) + '" loading="lazy" decoding="async" class="w-full h-full object-cover">';
+            }
+            return escapeHTML(p.icon || DEFAULT_ICON);
+        }
+
+// ---- أدوات عرض الأسعار والأقسام ----
+        function categoryLabel(id) {
+            const c = CATEGORIES.find(function (x) { return x.id === id; });
+            return c ? c.ar : '';
+        }
+
+        // "123 – 360" أو "130" (بدون وحدة العملة)
+        function priceText(p) {
+            return p.priceMax > p.priceMin ? formatNumber(p.priceMin) + ' – ' + formatNumber(p.priceMax) : formatNumber(p.priceMin);
+        }
+
+        function stuffedText(d) {
+            return d.max > d.min ? formatNumber(d.min) + ' – ' + formatNumber(d.max) : formatNumber(d.max);
+        }
+
+        // ملاحظات البطاقة: الخيارات، النكهات، الأحجام، الأطراف المحشوة، الملاحظات
+        function productNotesHTML(p) {
+            const rows = [];
+            const line = function (label, value) {
+                return '<p class="text-[11px] text-slate-400 mt-1"><span class="text-slate-500">' + label + ':</span> ' + escapeHTML(value) + '</p>';
+            };
+            if (p.variants.length) {
+                rows.push('<div class="flex flex-wrap gap-1 mt-2">' + p.variants.map(function (v) {
+                    return '<span class="text-[11px] bg-slate-800 text-slate-200 rounded-lg px-2 py-0.5">' + escapeHTML(v.label) +
+                        ': <b class="text-amber-400">' + formatNumber(v.price) + '</b></span>';
+                }).join('') + '</div>');
+            }
+            if (p.flavors.length) rows.push(line('الأنواع', p.flavors.join(' • ')));
+            if (p.sizes.length > 1) rows.push(line('الأحجام', p.sizes.map(function (k) { return SIZE_LABELS[k]; }).join(' / ')));
+            if (p.stuffedCrustDelta) {
+                rows.push('<p class="text-[11px] text-emerald-400 mt-1">🧀 الأطراف المحشوة بالجبن: +' + stuffedText(p.stuffedCrustDelta) + ' ج.م حسب الحجم</p>');
+            }
+            if (p.thickCrustOrAddonsMaxPrice) {
+                rows.push('<p class="text-[11px] text-amber-300/90 mt-1">يصل إلى ' + formatNumber(p.thickCrustOrAddonsMaxPrice) + ' ج.م مع العجينة السميكة أو الإضافات</p>');
+            }
+            if (p.priceNote) rows.push('<p class="text-[11px] text-slate-400 mt-1">' + escapeHTML(p.priceNote) + '</p>');
+            if (p.isApproximate) rows.push('<p class="text-[10px] text-slate-500 mt-1">* الأسعار تقريبية وقد تختلف حسب الفرع</p>');
+            return rows.join('');
+        }
+
+        // ---- نافذة خيارات الطلب ----
+        let orderTarget = null;
+
+        function productNeedsOptions(p) {
+            return p.variants.length > 0 || p.flavors.length > 1 || p.sizes.length > 1 || !!p.stuffedCrustDelta;
+        }
+
+        function startOrder(p) {
+            if (!p.available) { showToast('هذا الصنف غير متاح حالياً.', 'error'); return; }
+            if (!productNeedsOptions(p)) { orderItem(p.name, priceText(p)); return; }
+            orderTarget = p;
+            renderOrderModal();
+            document.getElementById('order-modal').classList.remove('hidden');
+        }
+
+        function closeOrderModal() {
+            orderTarget = null;
+            const modal = document.getElementById('order-modal');
+            if (modal) modal.classList.add('hidden');
+        }
+
+        function renderOrderModal() {
+            const p = orderTarget;
+            const body = document.getElementById('order-modal-body');
+            if (!p || !body) return;
+            const selectCls = 'w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500';
+            let html = '<h3 id="order-modal-title" class="font-black text-lg text-white">' + escapeHTML(p.name) + '</h3>';
+
+            if (p.variants.length) {
+                html += '<fieldset class="space-y-2"><legend class="text-xs text-slate-400 mb-1">اختر الحجم / الخيار</legend>' + p.variants.map(function (v, i) {
+                    return '<label class="flex items-center justify-between gap-2 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 cursor-pointer">' +
+                        '<span class="flex items-center gap-2"><input type="radio" name="ord-variant" value="' + escapeHTML(v.key) + '" class="accent-amber-500"' + (i === 0 ? ' checked' : '') + '> ' + escapeHTML(v.label) + '</span>' +
+                        '<b class="text-amber-400">' + formatNumber(v.price) + ' ج.م</b></label>';
+                }).join('') + '</fieldset>';
+            }
+            if (p.flavors.length > 1) {
+                html += '<div><label for="ord-flavor" class="block text-xs text-slate-400 mb-1">النوع / النكهة</label><select id="ord-flavor" class="' + selectCls + '">' +
+                    p.flavors.map(function (f) { return '<option value="' + escapeHTML(f) + '">' + escapeHTML(f) + '</option>'; }).join('') + '</select></div>';
+            }
+            if (p.sizes.length > 1) {
+                html += '<div><label for="ord-size" class="block text-xs text-slate-400 mb-1">الحجم</label><select id="ord-size" class="' + selectCls + '">' +
+                    p.sizes.map(function (k) { return '<option value="' + k + '">' + SIZE_LABELS[k] + '</option>'; }).join('') + '</select></div>';
+            }
+            if (p.stuffedCrustDelta) {
+                html += '<label class="flex items-start gap-2 text-sm text-slate-200 cursor-pointer"><input type="checkbox" id="ord-stuffed" class="accent-amber-500 mt-1">' +
+                    '<span>أطراف محشوة بالجبن <span class="text-emerald-400">(+' + stuffedText(p.stuffedCrustDelta) + ' ج.م حسب الحجم)</span></span></label>';
+            }
+            html += '<p class="text-xs text-slate-400">السعر: <b class="text-amber-400">' + escapeHTML(priceText(p)) + ' ج.م</b>' + (p.isApproximate ? ' (تقريبي)' : '') + '</p>';
+            html += '<div class="flex gap-2 pt-1">' +
+                '<button type="button" onclick="confirmOrderOptions()" class="flex-1 bg-amber-600 hover:bg-amber-500 text-white font-bold text-sm py-2.5 rounded-xl transition">تأكيد الطلب عبر واتساب</button>' +
+                '<button type="button" onclick="closeOrderModal()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-sm px-4 py-2.5 rounded-xl transition">إلغاء</button></div>';
+            body.innerHTML = html;
+        }
+
+        function confirmOrderOptions() {
+            const p = orderTarget;
+            if (!p) return;
+            let name = p.name;
+            let price = priceText(p);
+            let upper = p.priceMax;
+            const parts = [];
+
+            if (p.variants.length) {
+                const checked = document.querySelector('input[name="ord-variant"]:checked');
+                const v = p.variants.find(function (x) { return checked && x.key === checked.value; });
+                if (!v) { showToast('اختر الحجم أولاً.', 'error'); return; }
+                parts.push(v.label);
+                price = formatNumber(v.price);
+                upper = v.price;
+            }
+            const flavorEl = document.getElementById('ord-flavor');
+            if (flavorEl && p.flavors.indexOf(flavorEl.value) !== -1) parts.push(flavorEl.value);
+            const sizeEl = document.getElementById('ord-size');
+            if (sizeEl && SIZE_LABELS[sizeEl.value]) parts.push('الحجم: ' + SIZE_LABELS[sizeEl.value]);
+            const stuffedEl = document.getElementById('ord-stuffed');
+            if (stuffedEl && stuffedEl.checked && p.stuffedCrustDelta) {
+                parts.push('أطراف محشوة بالجبن (+' + stuffedText(p.stuffedCrustDelta) + ' ج.م حسب الحجم)');
+                upper += p.stuffedCrustDelta.max;
+            }
+            if (upper > LIMITS.maxOrderTotal) { showToast('إجمالي الطلب أكبر من الحد المسموح.', 'error'); return; }
+            if (parts.length) name += ' (' + parts.join(' - ') + ')';
+
+            closeOrderModal();
+            orderItem(name, price);
+        }
+
+        // Render main menu
+        function renderMenu() {
+            const container = document.getElementById('products-container');
+            if (!container) return;
+            container.innerHTML = '';
+
+            // حالة فشل التحميل
+            if (loadError) {
+                container.innerHTML = '<div class="col-span-full text-center py-10 space-y-3">' +
+                    '<p class="text-sm text-rose-400">' + escapeHTML(loadError) + '</p>' +
+                    '<button type="button" onclick="retryLoad()" class="bg-slate-800 hover:bg-slate-700 text-amber-400 border border-amber-500/30 font-bold text-xs px-5 py-2 rounded-xl transition">إعادة المحاولة</button>' +
+                    '</div>';
+                return;
+            }
+
+            // حالة التحميل (Spinner + Skeleton)
+            if (isLoading) {
+                container.innerHTML = '<div class="col-span-full flex items-center justify-center gap-2 text-xs text-slate-500 pb-1" role="status"><span class="spinner"></span><span>جاري تحميل القائمة...</span></div>' +
+                    skeletonCard() + skeletonCard() + skeletonCard();
+                return;
+            }
+
+            const products = getProducts();
+            const filtered = currentCategory === 'all' ? products : products.filter(p => p.cat === currentCategory);
+
+            if (filtered.length === 0) {
+                container.innerHTML = `<div class="col-span-full text-center py-10 text-slate-500 text-sm">لا توجد منتجات متاحة في هذا القسم حالياً.</div>`;
+                return;
+            }
+
+            filtered.forEach((p) => {
+                const card = document.createElement('div');
+                card.className = `product-card ${p.cat} bg-slate-900/80 backdrop-blur border border-slate-800/80 rounded-2xl p-4 flex items-start gap-4 shadow-xl hover:border-amber-500/50 transition${p.available ? '' : ' opacity-60'}`;
+                card.innerHTML = `
+                    <div class="w-20 h-20 bg-amber-500/10 rounded-xl flex items-center justify-center text-3xl flex-shrink-0 border border-amber-500/20 overflow-hidden">
+                        ${mediaHTML(p)}
+                    </div>
+                    <div class="flex-grow min-w-0">
+                        <span class="inline-block text-[10px] font-bold text-amber-300/80 bg-amber-500/10 rounded-full px-2 py-0.5 mb-1">${escapeHTML(categoryLabel(p.cat))}</span>
+                        <h3 class="font-bold text-lg text-white leading-snug">${escapeHTML(p.name)}</h3>
+                        ${p.nameEn ? `<p dir="ltr" class="text-[11px] text-slate-500 text-right">${escapeHTML(p.nameEn)}</p>` : ''}
+                        <p class="text-xs text-slate-400 mt-0.5 line-clamp-2">${escapeHTML(p.desc)}</p>
+                        ${productNotesHTML(p)}
+                        <div class="flex items-center justify-between gap-2 mt-3 flex-wrap">
+                            <span class="text-amber-400 font-extrabold text-base">${escapeHTML(priceText(p))} ج.م</span>
+                            <button type="button" data-order-id="${escapeHTML(p.id)}" ${p.available ? '' : 'disabled'} class="bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow transition flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed">
+                                <span>${p.available ? 'اطلب الآن' : 'غير متاح'}</span>
+                            </button>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+            attachImageFallback(container);
+        }
+
+        // Filter category
+        function filterCategory(category, btnElement) {
+            currentCategory = category;
+            const buttons = document.querySelectorAll('.cat-btn');
+            buttons.forEach(btn => {
+                btn.classList.remove('bg-amber-600', 'text-white', 'shadow-md');
+                btn.classList.add('bg-slate-900', 'border', 'border-slate-800', 'text-slate-300');
+            });
+            if(btnElement) {
+                btnElement.classList.remove('bg-slate-900', 'border', 'border-slate-800', 'text-slate-300');
+                btnElement.classList.add('bg-amber-600', 'text-white', 'shadow-md');
+            }
+            renderMenu();
+        }
+
+        // WhatsApp order trigger
+        function orderItem(itemName, price) {
+            const phone = getOrderPhone(); // رقم الاستقبال (من الإعدادات أو الافتراضي)
+            const table = getTableFromURL();
+            let message = `مرحباً، أود طلب: ${itemName} بسعر ${price} ج.م`;
+            if (table) message += `\nرقم الطاولة: ${table}`;
+            const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+            const opened = window.open(url, '_blank', 'noopener,noreferrer');
+            // في حال حظر المتصفح للنافذة المنبثقة ننتقل للرابط مباشرة
+            if (!opened) window.location.href = url;
+        }
+
+        /* =====================================================================
+         * 7) الدخول للوحة التحكم (Admin Auth & Modals)
+         * ===================================================================== */
+
+        function openAdminLogin() {
+            document.getElementById('password-modal').classList.remove('hidden');
+            document.getElementById('admin-pass-input').value = '';
+            document.getElementById('admin-pass-input').focus();
+        }
+
+        // حساب SHA-256 بصيغة hex
+        async function sha256Hex(text) {
+            const bytes = new TextEncoder().encode(text);
+            const digest = await crypto.subtle.digest('SHA-256', bytes);
+            return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+
+        // فحص كلمة المرور: إن وُجد سجل معدّل نستخدم PBKDF2، وإلا نقارن بالبصمة الافتراضية (1234)
+        async function checkPassword(pass, record) {
+            if (record) {
+                if (!(window.crypto && window.crypto.subtle)) throw new Error('crypto-unavailable');
+                const hash = await pbkdf2Hex(pass, record.salt, record.iter);
+                return constantTimeEqual(hash, record.hash);
+            }
+            if (window.crypto && window.crypto.subtle) {
+                const hash = await sha256Hex(pass);
+                return constantTimeEqual(hash, ADMIN_PASSWORD_HASH);
+            }
+            // احتياطي للبيئات غير الآمنة (مثل فتح الملف عبر http بدون HTTPS)
+            return pass === '1234';
+        }
+
+        function getLockRemaining() {
+            const until = parseInt(safeStorage.get(LOCK_KEY) || '0', 10) || 0;
+            return Math.max(0, until - Date.now());
+        }
+
+        // تسجيل محاولة فاشلة؛ تعيد true إذا تم تفعيل القفل المؤقت
+        function registerFailedAttempt() {
+            failedAttempts++;
+            if (failedAttempts >= MAX_FAILED_ATTEMPTS) {
+                failedAttempts = 0;
+                safeStorage.set(LOCK_KEY, String(Date.now() + LOCK_DURATION_MS));
+                return true;
+            }
+            return false;
+        }
+
+        async function verifyAdminPassword() {
+            const remaining = getLockRemaining();
+            if (remaining > 0) {
+                alert('تم تجاوز عدد المحاولات المسموح بها. حاول بعد ' + Math.ceil(remaining / 1000) + ' ثانية.');
+                return;
+            }
+
+            const pass = document.getElementById('admin-pass-input').value;
+            let ok = false;
+            try {
+                if (!store) throw new Error('store-not-ready');
+                // جلب بيانات الدخول الحالية (قد تكون معدّلة من لوحة التحكم)
+                const record = await withTimeout(store.getAdminCredential(), SAVE_TIMEOUT_MS);
+                if (record === TIMEOUT) throw new Error('timeout');
+                ok = await checkPassword(pass, record);
+            } catch (e) {
+                console.error('تعذر التحقق من كلمة المرور:', e);
+                alert('تعذر التحقق من كلمة المرور حالياً. تحقق من الاتصال بالإنترنت وحاول مرة أخرى.');
+                return;
+            }
+
+            if (ok) {
+                failedAttempts = 0;
+                adminUnlocked = true;
+                document.getElementById('password-modal').classList.add('hidden');
+                document.getElementById('admin-modal').classList.remove('hidden');
+                renderAdminList();
+                onAdminUnlocked();
+            } else if (registerFailedAttempt()) {
+                alert('تم إيقاف المحاولات مؤقتاً لمدة دقيقة بسبب تكرار الخطأ.');
+            } else {
+                alert('كلمة المرور غير صحيحة! (كلمة المرور الافتراضية هي 1234)');
+            }
+        }
+
+        function closeModals() {
+            document.getElementById('password-modal').classList.add('hidden');
+            document.getElementById('admin-modal').classList.add('hidden');
+            adminUnlocked = false;
+            resetForm();
+            resetPasswordForm();
+            resetCustomerForm();
+            stopCustomersSync();      // إسقاط بيانات العملاء من الذاكرة عند الإغلاق
+            settingsFormFilled = false;
+        }
+
+        /* =====================================================================
+         * 8) إدارة المنتجات (Admin CRUD)
+         * ===================================================================== */
+
+        // Render admin management list
+        function renderAdminList() {
+            const listContainer = document.getElementById('admin-products-list');
+            if (!listContainer) return;
+            listContainer.innerHTML = '';
+
+            if (isLoading && !loadError) {
+                listContainer.innerHTML = `<div class="flex items-center justify-center gap-2 text-xs text-slate-500 py-4" role="status"><span class="spinner"></span><span>جاري التحميل...</span></div>`;
+                return;
+            }
+
+            const products = getProducts();
+
+            if (products.length === 0) {
+                listContainer.innerHTML = `<p class="text-xs text-slate-500 text-center py-4">لا توجد منتجات مسجلة.</p>`;
+                return;
+            }
+
+            products.forEach((p, index) => {
+                const item = document.createElement('div');
+                item.className = "bg-slate-950 border border-slate-800 rounded-xl p-3 flex items-center justify-between gap-2" + (p.available ? '' : ' opacity-70');
+                item.innerHTML = `
+                    <div class="flex items-center gap-3 min-w-0">
+                        <div class="w-10 h-10 rounded-lg overflow-hidden bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-xl flex-shrink-0">${mediaHTML(p)}</div>
+                        <div class="min-w-0">
+                            <h5 class="font-bold text-sm text-white truncate">${escapeHTML(p.name)}</h5>
+                            <span class="text-xs text-amber-400 font-semibold">${escapeHTML(priceText(p))} ج.م</span>
+                            <span class="text-[10px] text-slate-500"> • ${escapeHTML(categoryLabel(p.cat))}${p.available ? '' : ' • غير متاح'}</span>
+                        </div>
+                    </div>
+                    <div class="flex gap-1.5 flex-shrink-0 flex-wrap justify-end">
+                        <button type="button" onclick="toggleAvailability(${index})" class="bg-amber-600/20 hover:bg-amber-600 text-amber-400 hover:text-white text-xs px-2.5 py-1.5 rounded-lg transition">${p.available ? 'إيقاف' : 'تفعيل'}</button>
+                        <button type="button" onclick="editProduct(${index})" class="bg-blue-600/20 hover:bg-blue-600 text-blue-400 hover:text-white text-xs px-2.5 py-1.5 rounded-lg transition">تعديل</button>
+                        <button type="button" onclick="deleteProduct(${index})" class="bg-rose-600/20 hover:bg-rose-600 text-rose-400 hover:text-white text-xs px-2.5 py-1.5 rounded-lg transition">حذف</button>
+                    </div>
+                `;
+                listContainer.appendChild(item);
+            });
+            attachImageFallback(listContainer);
+        }
+
+        // قراءة بيانات النموذج مع التحقق (يعيد null عند وجود خطأ)
+        function readFormData() {
+            const val = function (id) { return document.getElementById(id).value; };
+            const fail = function (msg) { showToast(msg, 'error'); return null; };
+            const optionalNumber = function (id) {
+                const raw = latinDigits(val(id)).trim();
+                return raw === '' ? 0 : Number(raw);
+            };
+
+            const name = val('p-name').trim();
+            const cat = val('p-cat');
+            const desc = val('p-desc').trim();
+            const iconRaw = val('p-icon').trim();
+            const image = sanitizeImage(val('p-image-data'));
+
+            if (!name) return fail('اسم المنتج مطلوب.');
+            if (name.length > LIMITS.name) return fail('اسم المنتج طويل جداً.');
+            if (VALID_CATEGORIES.indexOf(cat) === -1) return fail('القسم غير صالح.');
+
+            // الخيارات ذات الأسعار المحددة: سطر لكل خيار (الاسم|السعر)
+            const variants = [];
+            const lines = val('p-variants').split(/\r?\n/).map(function (s) { return latinDigits(s).trim(); }).filter(Boolean);
+            for (let i = 0; i < lines.length; i++) {
+                const m = lines[i].match(/^(.+?)\s*[|:：=]\s*([0-9]+(?:\.[0-9]+)?)$/);
+                if (!m) return fail('صيغة الخيارات غير صحيحة. اكتب في كل سطر: الاسم|السعر');
+                const vPrice = Number(m[2]);
+                if (vPrice < 1 || vPrice > LIMITS.maxPrice) return fail('سعر الخيار يجب أن يكون بين 1 و ' + LIMITS.maxPrice + ' ج.م.');
+                variants.push({ key: 'v' + (variants.length + 1), label: m[1].trim().slice(0, LIMITS.variantLabel), price: vPrice });
+            }
+            if (variants.length > 12) return fail('الحد الأقصى 12 خياراً.');
+
+            let min = optionalNumber('p-price');
+            let max = optionalNumber('p-price-max');
+            if (variants.length) {
+                const prices = variants.map(function (v) { return v.price; });
+                min = Math.min.apply(null, prices);
+                max = Math.max.apply(null, prices);
+            } else {
+                if (!isFinite(min) || min < 1 || min > LIMITS.maxPrice) return fail('أدخل سعراً صحيحاً (من 1 إلى ' + LIMITS.maxPrice + ' ج.م).');
+                if (!isFinite(max) || max < 0 || max > LIMITS.maxPrice) return fail('أعلى سعر غير صالح.');
+                if (max === 0) max = min;
+                if (max < min) return fail('أعلى سعر يجب ألا يقل عن أقل سعر.');
+            }
+
+            const thick = optionalNumber('p-thick-max');
+            if (!isFinite(thick) || thick < 0 || thick > LIMITS.maxPrice) return fail('سعر العجينة السميكة غير صالح.');
+            if (thick && thick < max) return fail('سعر العجينة السميكة يجب ألا يقل عن أعلى سعر.');
+
+            const sMin = optionalNumber('p-stuffed-min');
+            const sMax = optionalNumber('p-stuffed-max');
+            if (!isFinite(sMin) || !isFinite(sMax) || sMin < 0 || sMax > 1000) return fail('قيمة الأطراف المحشوة غير صالحة.');
+            if ((sMin || sMax) && (sMax <= 0 || sMax < sMin)) return fail('حدّد نطاق الأطراف المحشوة بشكل صحيح (من ≤ إلى).');
+
+            const flavors = val('p-flavors').split(/[\r\n,،]+/).map(function (s) { return s.trim().slice(0, LIMITS.variantLabel); }).filter(Boolean);
+            if (flavors.length > 12) return fail('الحد الأقصى 12 نوعاً/نكهة.');
+            const sizes = Array.from(document.querySelectorAll('.p-size:checked')).map(function (el) { return el.value; });
+
+            return {
+                name: name,
+                nameEn: val('p-name-en').trim().slice(0, LIMITS.name),
+                price: String(min),
+                priceMin: min,
+                priceMax: max,
+                variants: variants,
+                flavors: flavors,
+                sizes: sizes,
+                stuffedCrustDelta: sMax > 0 ? { min: sMin, max: sMax } : null,
+                thickCrustOrAddonsMaxPrice: thick,
+                priceNote: val('p-price-note').trim().slice(0, LIMITS.desc),
+                currency: 'EGP',
+                isApproximate: document.getElementById('p-approx').checked,
+                available: document.getElementById('p-available').checked,
+                cat: cat,
+                desc: (desc || DEFAULT_DESC).slice(0, LIMITS.desc),
+                icon: Array.from(iconRaw || DEFAULT_ICON).slice(0, 4).join(''),
+                image: image
+            };
+        }
+
+        // إدارة حالة زر الحفظ (Spinner أثناء الحفظ)
+        function refreshSaveButtonLabel() {
+            const editing = document.getElementById('edit-id').value !== '';
+            document.getElementById('save-btn').innerText = editing ? "تحديث المنتج" : "حفظ المنتج";
+        }
+
+        function setSaving(state) {
+            isSaving = state;
+            const btn = document.getElementById('save-btn');
+            btn.disabled = state;
+            if (state) {
+                btn.innerHTML = '<span class="spinner"></span><span>جاري الحفظ...</span>';
+            } else {
+                refreshSaveButtonLabel();
+            }
+        }
+
+        // Save (Add or Update) Product
+        async function saveProduct(e) {
+            e.preventDefault();
+            if (!adminUnlocked) { showToast('سجّل الدخول أولاً.', 'error'); return; }
+            if (isSaving) return;
+            if (imageProcessing) { showToast('انتظر حتى تكتمل معالجة الصورة.', 'info'); return; }
+
+            const editId = document.getElementById('edit-id').value;
+            const data = readFormData();
+            if (!data) return;
+
+            setSaving(true);
+            try {
+                let operation;
+                if (editId === "") {
+                    operation = store.create(data);
+                } else {
+                    // التأكد أن المنتج لم يُحذف من جهاز آخر أثناء التعديل
+                    if (!productsCache.some(p => p.id === editId)) {
+                        showToast('هذا المنتج لم يعد موجوداً (حُذف من جهاز آخر).', 'error');
+                        resetForm();
+                        return;
+                    }
+                    operation = store.update(editId, data);
+                }
+
+                const result = await withTimeout(operation, SAVE_TIMEOUT_MS);
+                if (result === TIMEOUT) {
+                    showToast('لا يوجد اتصال حالياً. سيُحفظ التغيير تلقائياً عند عودة الإنترنت.', 'info');
+                } else {
+                    showToast(editId === "" ? 'تمت إضافة المنتج ✅' : 'تم تحديث المنتج ✅', 'success');
+                }
+                resetForm();
+                renderAdminList();
+                renderMenu();
+            } catch (err) {
+                console.error('فشل الحفظ:', err);
+                showToast(friendlyError(err), 'error');
+            } finally {
+                setSaving(false);
+            }
+        }
+
+        // Edit Product
+        function editProduct(index) {
+            const p = getProducts()[index];
+            if (!p) { showToast('تعذر العثور على المنتج.', 'error'); return; }
+            const set = function (id, value) { document.getElementById(id).value = value; };
+
+            set('edit-index', index);
+            set('edit-id', p.id);
+            set('p-name', p.name);
+            set('p-name-en', p.nameEn || '');
+            set('p-price', p.variants.length ? '' : p.priceMin);
+            set('p-price-max', !p.variants.length && p.priceMax > p.priceMin ? p.priceMax : '');
+            set('p-thick-max', p.thickCrustOrAddonsMaxPrice || '');
+            set('p-variants', p.variants.map(function (v) { return v.label + '|' + v.price; }).join('\n'));
+            set('p-flavors', p.flavors.join('\n'));
+            document.querySelectorAll('.p-size').forEach(function (el) { el.checked = p.sizes.indexOf(el.value) !== -1; });
+            set('p-stuffed-min', p.stuffedCrustDelta ? p.stuffedCrustDelta.min : '');
+            set('p-stuffed-max', p.stuffedCrustDelta ? p.stuffedCrustDelta.max : '');
+            set('p-price-note', p.priceNote || '');
+            document.getElementById('p-available').checked = p.available;
+            document.getElementById('p-approx').checked = p.isApproximate;
+            set('p-cat', p.cat);
+            set('p-desc', p.desc);
+            set('p-icon', p.icon);
+            set('p-image', '');
+            set('p-image-data', p.image || '');
+            updateImagePreview(p.image || '');
+
+            document.getElementById('form-title').innerText = "✏️ تعديل المنتج";
+            document.getElementById('save-btn').innerText = "تحديث المنتج";
+            document.getElementById('product-form').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        // Delete Product
+        async function deleteProduct(index) {
+            if (!adminUnlocked) return;
+            const target = getProducts()[index];
+            if (!target) { showToast('تعذر العثور على المنتج.', 'error'); return; }
+
+            if (confirm('هل أنت متأكد من حذف هذا المنتج؟')) {
+                try {
+                    const result = await withTimeout(store.remove(target.id), SAVE_TIMEOUT_MS);
+                    if (document.getElementById('edit-id').value === target.id) resetForm();
+                    showToast(result === TIMEOUT ? 'سيتم الحذف عند عودة الاتصال.' : 'تم حذف المنتج 🗑️', result === TIMEOUT ? 'info' : 'success');
+                    renderAdminList();
+                    renderMenu();
+                } catch (err) {
+                    console.error('فشل الحذف:', err);
+                    showToast(friendlyError(err), 'error');
+                }
+            }
+        }
+
+        // تفعيل/إيقاف توفر الصنف
+        async function toggleAvailability(index) {
+            if (!adminUnlocked) return;
+            const p = getProducts()[index];
+            if (!p) { showToast('تعذر العثور على المنتج.', 'error'); return; }
+            const next = !p.available;
+            try {
+                const result = await withTimeout(store.update(p.id, Object.assign({}, p, { available: next })), SAVE_TIMEOUT_MS);
+                if (result === TIMEOUT) showToast('سيتم التحديث عند عودة الاتصال.', 'info');
+                else showToast(next ? 'تم تفعيل الصنف ✅' : 'تم إيقاف الصنف مؤقتاً', 'success');
+            } catch (err) {
+                console.error('فشل تغيير التوفر:', err);
+                showToast(friendlyError(err), 'error');
+            }
+        }
+
+        // استعادة قائمة بابا جونز (القاهرة) الافتراضية - تستبدل كل الأصناف الحالية
+        async function resetMenuToDefaults() {
+            if (!adminUnlocked) return;
+            if (!confirm('سيتم حذف جميع الأصناف الحالية واستبدالها بقائمة بابا جونز (القاهرة) الافتراضية. هل أنت متأكد؟')) return;
+            try {
+                const result = await withTimeout(store.resetMenu(defaultProducts), SAVE_TIMEOUT_MS);
+                resetForm();
+                showToast(result === TIMEOUT ? 'ستُستعاد القائمة عند عودة الاتصال.' : 'تمت استعادة القائمة الافتراضية ✅', result === TIMEOUT ? 'info' : 'success');
+            } catch (err) {
+                console.error('فشل استعادة القائمة:', err);
+                showToast(friendlyError(err), 'error');
+            }
+        }
+
+        // Reset Form
+        function resetForm() {
+            document.getElementById('product-form').reset();
+            document.getElementById('edit-index').value = "";
+            document.getElementById('edit-id').value = "";
+            document.getElementById('p-image-data').value = "";
+            updateImagePreview('');
+            document.getElementById('form-title').innerText = "➕ إضافة منتج جديد";
+            if (!isSaving) document.getElementById('save-btn').innerText = "حفظ المنتج";
+            document.getElementById('p-icon').value = DEFAULT_ICON;
+        }
+
+        /* =====================================================================
+         * 8-ب) تعديل بيانات دخول المدير (تغيير كلمة المرور)
+         * ===================================================================== */
+
+        let isChangingPassword = false;
+
+        function resetPasswordForm() {
+            const form = document.getElementById('password-change-form');
+            if (form) form.reset();
+        }
+
+        function setChangingPassword(state) {
+            isChangingPassword = state;
+            const btn = document.getElementById('pass-save-btn');
+            btn.disabled = state;
+            if (state) btn.innerHTML = '<span class="spinner"></span><span>جاري التحديث...</span>';
+            else btn.innerText = 'تحديث كلمة المرور';
+        }
+
+        async function changeAdminPassword(e) {
+            e.preventDefault();
+            if (!adminUnlocked) { showToast('سجّل الدخول أولاً.', 'error'); return; }
+            if (isChangingPassword) return;
+
+            const remaining = getLockRemaining();
+            if (remaining > 0) {
+                showToast('تم إيقاف المحاولات مؤقتاً. حاول بعد ' + Math.ceil(remaining / 1000) + ' ثانية.', 'error');
+                return;
+            }
+
+            const current = document.getElementById('pass-current').value;
+            const next = document.getElementById('pass-new').value;
+            const confirmValue = document.getElementById('pass-confirm').value;
+
+            if (!(window.crypto && window.crypto.subtle)) {
+                showToast('تغيير كلمة المرور يتطلب فتح الموقع عبر HTTPS.', 'error'); return;
+            }
+            if (!current) { showToast('أدخل كلمة المرور الحالية.', 'error'); return; }
+            if (next.length < MIN_PASSWORD_LENGTH) {
+                showToast('كلمة المرور الجديدة يجب ألا تقل عن ' + MIN_PASSWORD_LENGTH + ' أحرف.', 'error'); return;
+            }
+            if (next.length > MAX_PASSWORD_LENGTH) {
+                showToast('كلمة المرور الجديدة طويلة جداً.', 'error'); return;
+            }
+            if (next !== confirmValue) { showToast('تأكيد كلمة المرور غير مطابق.', 'error'); return; }
+            if (next === current) { showToast('كلمة المرور الجديدة مطابقة للحالية.', 'error'); return; }
+
+            setChangingPassword(true);
+            try {
+                // 1) التحقق من كلمة المرور الحالية
+                const record = await withTimeout(store.getAdminCredential(), SAVE_TIMEOUT_MS);
+                if (record === TIMEOUT) throw new Error('timeout');
+                const ok = await checkPassword(current, record);
+                if (!ok) {
+                    if (registerFailedAttempt()) showToast('تم إيقاف المحاولات مؤقتاً لمدة دقيقة.', 'error');
+                    else showToast('كلمة المرور الحالية غير صحيحة.', 'error');
+                    return;
+                }
+
+                // 2) إنشاء بصمة جديدة بملح عشوائي وحفظها
+                const salt = bytesToHex(crypto.getRandomValues(new Uint8Array(16)));
+                const hash = await pbkdf2Hex(next, salt, PBKDF2_ITERATIONS);
+                const saved = await withTimeout(store.setAdminCredential({ salt: salt, iter: PBKDF2_ITERATIONS, hash: hash }), SAVE_TIMEOUT_MS);
+                if (saved === TIMEOUT) throw new Error('timeout');
+
+                failedAttempts = 0;
+                resetPasswordForm();
+                showToast('تم تحديث كلمة المرور بنجاح ✅', 'success');
+            } catch (err) {
+                console.error('فشل تحديث كلمة المرور:', err);
+                showToast(err && err.message === 'timeout' ? 'لم يتأكد الحفظ، تحقق من الاتصال وأعد المحاولة.' : friendlyError(err), 'error');
+            } finally {
+                setChangingPassword(false);
+            }
+        }
+
+        /* =====================================================================
+         * 8-ج) التبويبات الفرعية في لوحة التحكم
+         * ===================================================================== */
+
+        const ADMIN_TABS = ['products', 'customers', 'settings'];
+        const TAB_ACTIVE = ['bg-amber-600', 'text-white', 'shadow-md'];
+        const TAB_INACTIVE = ['bg-slate-900', 'border', 'border-slate-800', 'text-slate-300', 'hover:bg-slate-800'];
+
+        function switchAdminTab(tab) {
+            if (ADMIN_TABS.indexOf(tab) === -1) tab = 'products';
+            ADMIN_TABS.forEach(function (name) {
+                const panel = document.getElementById('tab-panel-' + name);
+                const btn = document.getElementById('tab-btn-' + name);
+                if (!panel || !btn) return;
+                const active = name === tab;
+                panel.classList.toggle('hidden', !active);
+                btn.setAttribute('aria-selected', active ? 'true' : 'false');
+                TAB_ACTIVE.forEach(function (c) { btn.classList.toggle(c, active); });
+                TAB_INACTIVE.forEach(function (c) { btn.classList.toggle(c, !active); });
+                btn.classList.toggle('font-bold', active);
+                btn.classList.toggle('font-semibold', !active);
+            });
+            if (tab === 'settings' && !settingsFormFilled) fillSettingsForm();
+        }
+
+        // يُستدعى بعد نجاح دخول المدير
+        function onAdminUnlocked() {
+            settingsFormFilled = false;
+            switchAdminTab('products');
+            startCustomersSync();
+            renderStats();
+        }
+
+        /* =====================================================================
+         * 8-د) بطاقات الإحصائيات الحية (تتحدث مع كل تغيير في قاعدة البيانات)
+         * ===================================================================== */
+
+        const STAT_SPINNER = '<span class="spinner spinner-lg" role="status" aria-label="جاري التحميل"></span>';
+
+        function renderStats() {
+            const dbEl = document.getElementById('stat-db');
+            const barEl = document.getElementById('stat-db-bar');
+            const noteEl = document.getElementById('stat-db-note');
+            const itemsEl = document.getElementById('stat-items');
+            const customersEl = document.getElementById('stat-customers');
+            if (!dbEl || !barEl || !noteEl || !itemsEl || !customersEl) return;
+
+            // عدد الأصناف
+            if (loadError) itemsEl.textContent = '—';
+            else if (isLoading) itemsEl.innerHTML = STAT_SPINNER;
+            else itemsEl.textContent = formatNumber(productsCache.length);
+
+            // عدد العملاء
+            if (customersError) customersEl.textContent = '—';
+            else if (!customersLoaded) customersEl.innerHTML = STAT_SPINNER;
+            else customersEl.textContent = formatNumber(customersCache.length);
+
+            // استهلاك قاعدة البيانات (تقدير من حجم البيانات المخزنة)
+            const quotaMB = storeMode === 'firebase' ? DB_QUOTA_MB_FIREBASE : DB_QUOTA_MB_LOCAL;
+            if (loadError || customersError) {
+                dbEl.textContent = '—';
+                barEl.style.width = '0%';
+                noteEl.textContent = 'تعذر حساب الحجم';
+                return;
+            }
+            if (isLoading || !customersLoaded) {
+                dbEl.innerHTML = STAT_SPINNER;
+                barEl.style.width = '0%';
+                noteEl.textContent = 'جاري الحساب...';
+                return;
+            }
+
+            const total = productsBytes + customersBytes + settingsBytes;
+            const percent = Math.min(100, (total / (quotaMB * 1048576)) * 100);
+            dbEl.textContent = formatMB(total) + ' MB';
+            barEl.style.width = (total > 0 ? Math.max(percent, 1) : 0) + '%';
+            barEl.classList.toggle('bg-rose-500', percent >= 80);
+            barEl.classList.toggle('bg-amber-500', percent < 80);
+            noteEl.textContent = 'من ' + formatNumber(quotaMB) + ' MB ' + (storeMode === 'firebase' ? '(الخطة المجانية)' : '(التخزين المحلي)') + ' • حجم تقديري';
+        }
+
+        /* =====================================================================
+         * 8-هـ) إعدادات الكافيه (الهاتف + الاسم + الشعار + خلفية الهيدر)
+         * ===================================================================== */
+
+        const SETTINGS_IMAGE_KINDS = {
+            logo: { dataId: 's-logo-data', previewId: 'logo-preview', removeId: 'remove-logo-btn', fileId: 's-logo', placeholder: '☕', options: { maxSide: 256, maxChars: 60000, transparent: true } },
+            bg: { dataId: 's-bg-data', previewId: 'bg-preview', removeId: 'remove-bg-btn', fileId: 's-bg', placeholder: '🖼️', options: { maxSide: 1000, maxChars: 140000, transparent: false } }
+        };
+        let settingsImageBusy = 0;
+        let isSavingSettings = false;
+
+        function getCafeName() { return settingsCache.name || DEFAULT_CAFE_NAME; }
+        function getOrderPhone() { return settingsCache.phone || WHATSAPP_PHONE; }
+
+        // تطبيق الإعدادات على الصفحة الرئيسية (الاسم/الشعار/الخلفية)
+        function applySettings() {
+            const name = getCafeName();
+            const nameEl = document.getElementById('cafe-name');
+            if (nameEl) nameEl.textContent = name;
+            if (settingsCache.name) document.title = name + ' - المنيو الرقمي';
+
+            const logoEl = document.getElementById('cafe-logo');
+            if (logoEl) {
+                if (settingsCache.logo) {
+                    logoEl.innerHTML = '<img src="' + settingsCache.logo + '" alt="' + escapeHTML(name) + '" class="w-full h-full object-cover">';
+                } else {
+                    logoEl.textContent = '☕';
+                }
+            }
+
+            const bgEl = document.getElementById('header-bg');
+            const overlayEl = document.getElementById('header-overlay');
+            if (bgEl && overlayEl) {
+                if (settingsCache.headerBg) {
+                    bgEl.style.backgroundImage = 'url("' + settingsCache.headerBg + '")';
+                    bgEl.classList.remove('hidden');
+                    overlayEl.classList.remove('hidden');
+                } else {
+                    bgEl.style.backgroundImage = '';
+                    bgEl.classList.add('hidden');
+                    overlayEl.classList.add('hidden');
+                }
+            }
+        }
+
+        function startSettingsSync() {
+            if (settingsUnsub) return;
+            try {
+                settingsUnsub = store.subscribeSettings(onSettingsChanged, onSettingsError);
+            } catch (err) {
+                onSettingsError(err);
+            }
+        }
+
+        function onSettingsChanged(settings) {
+            settingsCache = settings;
+            settingsBytes = jsonBytes(settings);
+            settingsLoaded = true;
+            applySettings();
+            renderStats();
+            if (adminUnlocked && !settingsFormFilled) fillSettingsForm();
+        }
+
+        function onSettingsError(err) {
+            // نكتفي بالقيم الافتراضية دون إيقاف التطبيق
+            console.error('تعذر تحميل إعدادات الكافيه:', err);
+        }
+
+        // معاينة صورة في نموذج الإعدادات
+        function updateSettingsPreview(kind, src) {
+            const cfg = SETTINGS_IMAGE_KINDS[kind];
+            const box = document.getElementById(cfg.previewId);
+            const removeBtn = document.getElementById(cfg.removeId);
+            const safe = sanitizeImage(src);
+            if (safe) {
+                box.innerHTML = '<img src="' + safe + '" alt="معاينة" class="w-full h-full object-cover">';
+                removeBtn.classList.remove('hidden');
+            } else {
+                box.textContent = cfg.placeholder;
+                removeBtn.classList.add('hidden');
+            }
+        }
+
+        function setSettingsImage(kind, src) {
+            const cfg = SETTINGS_IMAGE_KINDS[kind];
+            document.getElementById(cfg.fileId).value = '';
+            document.getElementById(cfg.dataId).value = sanitizeImage(src);
+            updateSettingsPreview(kind, src);
+        }
+
+        // تعبئة النموذج بالقيم الحالية
+        function fillSettingsForm() {
+            if (!settingsLoaded) return;
+            document.getElementById('s-phone').value = settingsCache.phone || WHATSAPP_PHONE;
+            document.getElementById('s-name').value = settingsCache.name || DEFAULT_CAFE_NAME;
+            setSettingsImage('logo', settingsCache.logo);
+            setSettingsImage('bg', settingsCache.headerBg);
+            settingsFormFilled = true;
+        }
+
+        async function handleSettingsImage(event, kind) {
+            const cfg = SETTINGS_IMAGE_KINDS[kind];
+            if (!cfg) return;
+            const input = event.target;
+            const file = input.files && input.files[0];
+            if (!file) return;
+
+            settingsImageBusy++;
+            document.getElementById(cfg.previewId).innerHTML = '<span class="spinner spinner-lg"></span>';
+            try {
+                const dataUrl = await processImageFile(file, cfg.options);
+                document.getElementById(cfg.dataId).value = dataUrl;
+                updateSettingsPreview(kind, dataUrl);
+            } catch (err) {
+                console.error('فشل معالجة الصورة:', err);
+                input.value = '';
+                updateSettingsPreview(kind, document.getElementById(cfg.dataId).value);
+                showToast(err && err.message ? err.message : 'تعذر معالجة الصورة.', 'error');
+            } finally {
+                settingsImageBusy--;
+            }
+        }
+
+        function removeSettingsImage(kind) {
+            if (!SETTINGS_IMAGE_KINDS[kind]) return;
+            setSettingsImage(kind, '');
+        }
+
+        function setSavingSettings(state) {
+            isSavingSettings = state;
+            const btn = document.getElementById('settings-save-btn');
+            btn.disabled = state;
+            if (state) btn.innerHTML = '<span class="spinner"></span><span>جاري الحفظ...</span>';
+            else btn.innerText = 'حفظ الإعدادات';
+        }
+
+        async function saveCafeSettings(e) {
+            e.preventDefault();
+            if (!adminUnlocked) { showToast('سجّل الدخول أولاً.', 'error'); return; }
+            if (isSavingSettings) return;
+            if (!settingsLoaded) { showToast('جاري تحميل الإعدادات، حاول بعد لحظات.', 'info'); return; }
+            if (settingsImageBusy > 0) { showToast('انتظر حتى تكتمل معالجة الصورة.', 'info'); return; }
+
+            const phone = normalizePhone(document.getElementById('s-phone').value);
+            const name = document.getElementById('s-name').value.trim();
+            if (!phone) { showToast('رقم الهاتف غير صالح (8 إلى 15 رقماً).', 'error'); return; }
+            if (!name) { showToast('اسم الكافيه مطلوب.', 'error'); return; }
+            if (name.length > LIMITS.cafeName) { showToast('اسم الكافيه طويل جداً.', 'error'); return; }
+
+            const data = {
+                name: name,
+                phone: phone,
+                logo: sanitizeImage(document.getElementById('s-logo-data').value),
+                headerBg: sanitizeImage(document.getElementById('s-bg-data').value)
+            };
+
+            setSavingSettings(true);
+            try {
+                const result = await withTimeout(store.saveSettings(data), SAVE_TIMEOUT_MS);
+                showToast(result === TIMEOUT ? 'لا يوجد اتصال حالياً. ستُحفظ الإعدادات عند عودة الإنترنت.' : 'تم حفظ الإعدادات ✅', result === TIMEOUT ? 'info' : 'success');
+                fillSettingsForm();
+            } catch (err) {
+                console.error('فشل حفظ الإعدادات:', err);
+                showToast(friendlyError(err), 'error');
+            } finally {
+                setSavingSettings(false);
+            }
+        }
+
+        /* =====================================================================
+         * 8-و) إدارة العملاء (جدول + إضافة/تعديل/حذف + واتساب)
+         * ===================================================================== */
+
+        let isSavingCustomer = false;
+
+        // بدء الاستماع اللحظي للعملاء (بعد دخول المدير فقط)
+        function startCustomersSync() {
+            if (customersUnsub) return;
+            customersLoaded = false;
+            customersError = '';
+            renderCustomersTable();
+            renderStats();
+
+            clearTimeout(customersTimer);
+            customersTimer = setTimeout(function () {
+                if (!customersLoaded && !customersError) {
+                    customersError = 'تعذر تحميل العملاء. تحقق من الاتصال ثم أعد المحاولة.';
+                    renderCustomersTable();
+                    renderStats();
+                }
+            }, LOAD_TIMEOUT_MS);
+
+            try {
+                customersUnsub = store.subscribeCustomers(onCustomersChanged, onCustomersError);
+            } catch (err) {
+                onCustomersError(err);
+            }
+        }
+
+        function stopCustomersSync() {
+            clearTimeout(customersTimer);
+            if (customersUnsub) {
+                try { customersUnsub(); } catch (e) { console.error(e); }
+                customersUnsub = null;
+            }
+            customersCache = [];
+            customersLoaded = false;
+            customersError = '';
+            customersBytes = 0;
+            renderCustomersTable();
+        }
+
+        function retryCustomers() {
+            stopCustomersSync();
+            startCustomersSync();
+        }
+
+        function onCustomersChanged(list) {
+            clearTimeout(customersTimer);
+            customersLoaded = true;
+            customersError = '';
+            customersCache = list;
+            customersBytes = jsonBytes(list);
+            renderCustomersTable();
+            renderStats();
+        }
+
+        function onCustomersError(err) {
+            console.error('خطأ في تحميل العملاء:', err);
+            clearTimeout(customersTimer);
+            customersUnsub = null;
+            customersLoaded = false;
+            customersError = friendlyError(err);
+            renderCustomersTable();
+            renderStats();
+        }
+
+        // رسم جدول العملاء
+        function renderCustomersTable() {
+            const body = document.getElementById('customers-table-body');
+            if (!body) return;
+            body.innerHTML = '';
+
+            const addMessageRow = function (html) {
+                const tr = document.createElement('tr');
+                tr.innerHTML = '<td colspan="3" class="px-3 py-8 text-center text-xs text-slate-500">' + html + '</td>';
+                body.appendChild(tr);
+            };
+
+            if (customersError) {
+                addMessageRow('<span class="text-rose-400">' + escapeHTML(customersError) + '</span><br>' +
+                    '<button type="button" onclick="retryCustomers()" class="mt-3 bg-slate-800 hover:bg-slate-700 text-amber-400 border border-amber-500/30 font-bold text-xs px-4 py-1.5 rounded-xl transition">إعادة المحاولة</button>');
+                return;
+            }
+            if (!customersLoaded) {
+                addMessageRow('<span class="inline-flex items-center gap-2"><span class="spinner"></span><span>جاري تحميل العملاء...</span></span>');
+                return;
+            }
+            if (customersCache.length === 0) {
+                addMessageRow('لا يوجد عملاء مسجلون بعد.');
+                return;
+            }
+
+            customersCache.forEach(function (c, index) {
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-slate-800/40 transition';
+                const noPhone = !c.phone;
+                tr.innerHTML =
+                    '<td class="px-3 py-3 align-top">' +
+                        '<div class="font-bold text-white text-sm break-words">' + escapeHTML(c.name) + '</div>' +
+                        '<div dir="ltr" class="text-xs text-slate-400 text-right">' + (noPhone ? '—' : '+' + escapeHTML(c.phone)) + '</div>' +
+                    '</td>' +
+                    '<td class="px-3 py-3 text-xs text-slate-300 whitespace-nowrap align-top">' + escapeHTML(formatDate(c.createdAt)) + '</td>' +
+                    '<td class="px-3 py-3 align-top">' +
+                        '<div class="flex gap-1.5 flex-wrap">' +
+                            '<button type="button" onclick="sendCustomerWhatsApp(' + index + ')" ' + (noPhone ? 'disabled ' : '') + 'aria-label="إرسال رسالة واتساب" class="bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white text-xs px-2.5 py-1.5 rounded-lg transition disabled:opacity-40 disabled:cursor-not-allowed">واتساب</button>' +
+                            '<button type="button" onclick="editCustomer(' + index + ')" class="bg-blue-600/20 hover:bg-blue-600 text-blue-400 hover:text-white text-xs px-2.5 py-1.5 rounded-lg transition">تعديل</button>' +
+                            '<button type="button" onclick="deleteCustomer(' + index + ')" class="bg-rose-600/20 hover:bg-rose-600 text-rose-400 hover:text-white text-xs px-2.5 py-1.5 rounded-lg transition">حذف</button>' +
+                        '</div>' +
+                    '</td>';
+                body.appendChild(tr);
+            });
+        }
+
+        function setSavingCustomer(state) {
+            isSavingCustomer = state;
+            const btn = document.getElementById('customer-save-btn');
+            btn.disabled = state;
+            if (state) {
+                btn.innerHTML = '<span class="spinner"></span><span>جاري الحفظ...</span>';
+            } else {
+                btn.innerText = document.getElementById('c-edit-id').value !== '' ? 'تحديث العميل' : 'حفظ العميل';
+            }
+        }
+
+        function resetCustomerForm() {
+            const form = document.getElementById('customer-form');
+            if (form) form.reset();
+            document.getElementById('c-edit-id').value = '';
+            document.getElementById('customer-form-title').innerText = '➕ إضافة عميل جديد';
+            if (!isSavingCustomer) document.getElementById('customer-save-btn').innerText = 'حفظ العميل';
+        }
+
+        // إضافة / تعديل عميل
+        async function saveCustomer(e) {
+            e.preventDefault();
+            if (!adminUnlocked) { showToast('سجّل الدخول أولاً.', 'error'); return; }
+            if (isSavingCustomer) return;
+            if (!customersLoaded) { showToast('جاري تحميل العملاء، حاول بعد لحظات.', 'info'); return; }
+
+            const editId = document.getElementById('c-edit-id').value;
+            const name = document.getElementById('c-name').value.trim();
+            const phone = normalizePhone(document.getElementById('c-phone').value);
+
+            if (!name) { showToast('اسم العميل مطلوب.', 'error'); return; }
+            if (name.length > LIMITS.customerName) { showToast('اسم العميل طويل جداً.', 'error'); return; }
+            if (!phone) { showToast('رقم الهاتف غير صالح (8 إلى 15 رقماً).', 'error'); return; }
+            if (customersCache.some(c => c.phone === phone && c.id !== editId)) {
+                showToast('هذا الرقم مسجل لعميل آخر.', 'error'); return;
+            }
+            if (editId !== '' && !customersCache.some(c => c.id === editId)) {
+                showToast('هذا العميل لم يعد موجوداً (حُذف من جهاز آخر).', 'error');
+                resetCustomerForm();
+                return;
+            }
+
+            setSavingCustomer(true);
+            try {
+                const operation = editId === '' ? store.createCustomer({ name: name, phone: phone }) : store.updateCustomer(editId, { name: name, phone: phone });
+                const result = await withTimeout(operation, SAVE_TIMEOUT_MS);
+                if (result === TIMEOUT) showToast('لا يوجد اتصال حالياً. سيُحفظ التغيير عند عودة الإنترنت.', 'info');
+                else showToast(editId === '' ? 'تمت إضافة العميل ✅' : 'تم تحديث بيانات العميل ✅', 'success');
+                resetCustomerForm();
+            } catch (err) {
+                console.error('فشل حفظ العميل:', err);
+                showToast(friendlyError(err), 'error');
+            } finally {
+                setSavingCustomer(false);
+            }
+        }
+
+        // تعديل عميل: تعبئة النموذج
+        function editCustomer(index) {
+            const c = customersCache[index];
+            if (!c) { showToast('تعذر العثور على العميل.', 'error'); return; }
+            document.getElementById('c-edit-id').value = c.id;
+            document.getElementById('c-name').value = c.name;
+            document.getElementById('c-phone').value = c.phone;
+            document.getElementById('customer-form-title').innerText = '✏️ تعديل بيانات العميل';
+            document.getElementById('customer-save-btn').innerText = 'تحديث العميل';
+            document.getElementById('customer-form').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        // حذف عميل مع تأكيد
+        async function deleteCustomer(index) {
+            if (!adminUnlocked) return;
+            const target = customersCache[index];
+            if (!target) { showToast('تعذر العثور على العميل.', 'error'); return; }
+
+            if (confirm('هل أنت متأكد من حذف هذا العميل؟')) {
+                try {
+                    const result = await withTimeout(store.removeCustomer(target.id), SAVE_TIMEOUT_MS);
+                    if (document.getElementById('c-edit-id').value === target.id) resetCustomerForm();
+                    showToast(result === TIMEOUT ? 'سيتم الحذف عند عودة الاتصال.' : 'تم حذف العميل 🗑️', result === TIMEOUT ? 'info' : 'success');
+                } catch (err) {
+                    console.error('فشل حذف العميل:', err);
+                    showToast(friendlyError(err), 'error');
+                }
+            }
+        }
+
+        // فتح محادثة واتساب مباشرة مع العميل برسالة افتراضية جاهزة
+        function sendCustomerWhatsApp(index) {
+            const c = customersCache[index];
+            if (!c) { showToast('تعذر العثور على العميل.', 'error'); return; }
+            if (!c.phone) { showToast('لا يوجد رقم هاتف صالح لهذا العميل.', 'error'); return; }
+
+            const message = 'مرحباً ' + c.name + ' 👋\nمعك ' + getCafeName() + '، يسعدنا خدمتك دائماً ☕';
+            const url = 'https://api.whatsapp.com/send?phone=' + encodeURIComponent(c.phone) + '&text=' + encodeURIComponent(message);
+            const opened = window.open(url, '_blank', 'noopener,noreferrer');
+            if (!opened) window.location.href = url;
+        }
+
+        /* =====================================================================
+         * 9) رفع الصور وضغطها (تُخزَّن كنص Base64 داخل Realtime Database)
+         * ===================================================================== */
+
+        // تحديث معاينة الصورة (object-cover ليتناسب أي حجم مع المربع)
+        function updateImagePreview(src) {
+            const box = document.getElementById('image-preview');
+            const removeBtn = document.getElementById('remove-image-btn');
+            const safe = sanitizeImage(src);
+            if (safe) {
+                box.innerHTML = '<img src="' + safe + '" alt="معاينة صورة المنتج" class="w-full h-full object-cover">';
+                removeBtn.classList.remove('hidden');
+            } else {
+                box.textContent = '🖼️';
+                removeBtn.classList.add('hidden');
+            }
+        }
+
+        function loadImageElement(file) {
+            return new Promise(function (resolve, reject) {
+                const url = URL.createObjectURL(file);
+                const img = new Image();
+                img.onload = function () { URL.revokeObjectURL(url); resolve(img); };
+                img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('تعذر قراءة الصورة. جرّب صيغة JPG أو PNG أو WebP.')); };
+                img.src = url;
+            });
+        }
+
+        // تصغير الصورة وتحويلها إلى JPEG مضغوط بحجم مناسب
+        // options: { maxSide, maxChars, transparent } - الافتراضي لصور المنتجات
+        async function processImageFile(file, options) {
+            const opts = Object.assign({ maxSide: LIMITS.imageMaxSide, maxChars: LIMITS.imageMaxChars, transparent: false }, options || {});
+            const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+            if (allowed.indexOf(file.type) === -1) throw new Error('صيغة الصورة غير مدعومة. استخدم JPG أو PNG أو WebP.');
+            if (file.size > LIMITS.rawImageBytes) throw new Error('حجم الصورة كبير جداً (الحد الأقصى 8 ميجابايت).');
+
+            const img = await loadImageElement(file);
+            const srcW = img.naturalWidth || img.width;
+            const srcH = img.naturalHeight || img.height;
+            if (!srcW || !srcH) throw new Error('أبعاد الصورة غير صالحة.');
+
+            // الشعار يحافظ على الشفافية (WebP)، وغيره يُحوَّل إلى JPEG بخلفية بيضاء
+            const mime = opts.transparent ? 'image/webp' : 'image/jpeg';
+            let maxSide = opts.maxSide;
+            for (let round = 0; round < 4; round++) {
+                const ratio = Math.min(1, maxSide / Math.max(srcW, srcH));
+                const w = Math.max(1, Math.round(srcW * ratio));
+                const h = Math.max(1, Math.round(srcH * ratio));
+
+                const canvas = document.createElement('canvas');
+                canvas.width = w;
+                canvas.height = h;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) throw new Error('المتصفح لا يدعم معالجة الصور.');
+                if (!opts.transparent) {
+                    ctx.fillStyle = '#ffffff';          // خلفية بيضاء للصور الشفافة
+                    ctx.fillRect(0, 0, w, h);
+                }
+                ctx.drawImage(img, 0, 0, w, h);
+
+                for (let quality = 0.82; quality >= 0.45; quality -= 0.09) {
+                    const dataUrl = canvas.toDataURL(mime, quality);
+                    if (dataUrl.length <= opts.maxChars) return dataUrl;
+                    // متصفح لا يدعم ترميز WebP يعيد PNG (لا يتأثر بالجودة) فلا فائدة من التكرار
+                    if (opts.transparent && dataUrl.indexOf('data:image/webp') !== 0) break;
+                }
+                maxSide = Math.round(maxSide * 0.8);   // تصغير إضافي إن بقي الحجم كبيراً
+            }
+            throw new Error('تعذر ضغط الصورة للحجم المطلوب. اختر صورة أبسط أو أصغر.');
+        }
+
+        async function handleImageSelected(event) {
+            const input = event.target;
+            const file = input.files && input.files[0];
+            if (!file) return;
+
+            imageProcessing = true;
+            const box = document.getElementById('image-preview');
+            box.innerHTML = '<span class="spinner spinner-lg"></span>';
+            try {
+                const dataUrl = await processImageFile(file);
+                document.getElementById('p-image-data').value = dataUrl;
+                updateImagePreview(dataUrl);
+            } catch (err) {
+                console.error('فشل معالجة الصورة:', err);
+                input.value = '';
+                updateImagePreview(document.getElementById('p-image-data').value);
+                showToast(err && err.message ? err.message : 'تعذر معالجة الصورة.', 'error');
+            } finally {
+                imageProcessing = false;
+            }
+        }
+
+        function removeProductImage() {
+            document.getElementById('p-image').value = '';
+            document.getElementById('p-image-data').value = '';
+            updateImagePreview('');
+        }
+
+        /* =====================================================================
+         * 10) رموز QR للطاولات
+         * ===================================================================== */
+
+        // تجهيز رابط المنيو الافتراضي في حقل الإدخال
+        function initQRDefaults() {
+            const input = document.getElementById('qr-base-url');
+            const warning = document.getElementById('qr-file-warning');
+            const isWeb = window.location.protocol === 'http:' || window.location.protocol === 'https:';
+            const saved = safeStorage.get(BASE_URL_KEY);
+
+            if (isWeb) {
+                input.value = window.location.origin + window.location.pathname;
+            } else if (saved) {
+                input.value = saved;
+            }
+            if (!isWeb) warning.classList.remove('hidden');
+        }
+
+        // بناء رابط المنيو الكامل (مع رقم الطاولة إن وُجد)
+        function buildMenuLink() {
+            const baseRaw = document.getElementById('qr-base-url').value.trim();
+            const tableRaw = document.getElementById('qr-table').value.trim();
+
+            let url;
+            try {
+                url = new URL(baseRaw);
+            } catch (e) {
+                showToast('أدخل رابط المنيو بشكل صحيح (يبدأ بـ https://).', 'error');
+                return null;
+            }
+            if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+                showToast('الرابط يجب أن يبدأ بـ http أو https.', 'error');
+                return null;
+            }
+            if (tableRaw && !/^[0-9A-Za-z\u0600-\u06FF-]{1,10}$/.test(tableRaw)) {
+                showToast('رقم الطاولة: حروف أو أرقام فقط (حتى 10 خانات).', 'error');
+                return null;
+            }
+
+            url.search = '';
+            url.hash = '';
+            if (tableRaw) url.searchParams.set('table', tableRaw);
+            safeStorage.set(BASE_URL_KEY, baseRaw);
+            return { link: url.toString(), table: tableRaw };
+        }
+
+        function generateQR() {
+            if (typeof QRious === 'undefined') {
+                showToast('تعذر تحميل مكتبة QR. تحقق من الاتصال بالإنترنت.', 'error');
+                return;
+            }
+            const built = buildMenuLink();
+            if (!built) return;
+
+            try {
+                new QRious({
+                    element: document.getElementById('qr-canvas'),
+                    value: built.link,
+                    size: 480,
+                    level: 'M',
+                    padding: 16,
+                    background: '#ffffff',
+                    foreground: '#000000'
+                });
+                document.getElementById('qr-link-text').textContent = built.link;
+                document.getElementById('qr-result').classList.remove('hidden');
+                showToast('تم توليد رمز QR ✅', 'success');
+            } catch (err) {
+                console.error('فشل توليد QR:', err);
+                showToast('تعذر توليد رمز QR.', 'error');
+            }
+        }
+
+        function downloadQR() {
+            try {
+                const canvas = document.getElementById('qr-canvas');
+                const table = document.getElementById('qr-table').value.trim();
+                const a = document.createElement('a');
+                a.href = canvas.toDataURL('image/png');
+                a.download = table ? 'menu-qr-table-' + table + '.png' : 'menu-qr.png';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            } catch (err) {
+                console.error(err);
+                showToast('تعذر تحميل الصورة.', 'error');
+            }
+        }
+
+        async function copyMenuLink() {
+            const text = document.getElementById('qr-link-text').textContent;
+            if (!text) return;
+            try {
+                if (navigator.clipboard && window.isSecureContext) {
+                    await navigator.clipboard.writeText(text);
+                } else {
+                    const tmp = document.createElement('textarea');
+                    tmp.value = text;
+                    tmp.setAttribute('readonly', '');
+                    tmp.style.position = 'fixed';
+                    tmp.style.opacity = '0';
+                    document.body.appendChild(tmp);
+                    tmp.select();
+                    document.execCommand('copy');
+                    tmp.remove();
+                }
+                showToast('تم نسخ الرابط 📋', 'success');
+            } catch (err) {
+                console.error(err);
+                showToast('تعذر النسخ، انسخ الرابط يدوياً.', 'error');
+            }
+        }
+
+        /* =====================================================================
+         * 11) التشغيل الأولي ومعالجة الأحداث
+         * ===================================================================== */
+
+        // إظهار هيكل التحميل فوراً قبل اكتمال تحميل الصفحة
+        renderMenu();
+
+        // الأحداث العامة (تفويض الأحداث + لوحة المفاتيح)
+        function setupEventListeners() {
+            // زر "اطلب الآن" عبر تفويض الأحداث (بدون كتابة أسماء المنتجات داخل onclick)
+            document.getElementById('products-container').addEventListener('click', function (e) {
+                const btn = e.target.closest('[data-order-id]');
+                if (!btn) return;
+                const product = getProducts().find(p => p.id === btn.getAttribute('data-order-id'));
+                if (product) startOrder(product);
+            });
+
+            // Enter لتأكيد كلمة المرور
+            document.getElementById('admin-pass-input').addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') { e.preventDefault(); verifyAdminPassword(); }
+            });
+
+            // Escape لإغلاق النوافذ
+            document.addEventListener('keydown', function (e) {
+                if (e.key !== 'Escape') return;
+                closeOrderModal();
+                const open = !document.getElementById('password-modal').classList.contains('hidden') ||
+                             !document.getElementById('admin-modal').classList.contains('hidden');
+                if (open) closeModals();
+            });
+        }
+
+// رسم أزرار الأقسام وقائمة الأقسام في نموذج الإدارة من CATEGORIES
+        function initCategoryUI() {
+            const bar = document.getElementById('category-filters');
+            if (bar) {
+                const base = 'cat-btn px-4 py-2 rounded-xl text-sm transition whitespace-nowrap ';
+                const on = 'active font-bold bg-amber-600 text-white shadow-md';
+                const off = 'font-semibold bg-slate-900 border border-slate-800 text-slate-300 hover:bg-slate-800';
+                bar.innerHTML = '<button type="button" onclick="filterCategory(\'all\', this)" class="' + base + on + '">الكل</button>' +
+                    CATEGORIES.map(function (c) {
+                        return '<button type="button" onclick="filterCategory(\'' + c.id + '\', this)" class="' + base + off + '">' + escapeHTML(c.icon + ' ' + c.ar) + '</button>';
+                    }).join('');
+            }
+            const select = document.getElementById('p-cat');
+            if (select) {
+                select.innerHTML = CATEGORIES.map(function (c) {
+                    return '<option value="' + c.id + '">' + escapeHTML(c.ar + ' - ' + c.en) + '</option>';
+                }).join('');
+            }
+        }
+
+        // عرض شارة الطاولة للزبون
+        function setupTableBadge() {
+            const table = getTableFromURL();
+            if (!table) return;
+            const badge = document.getElementById('table-badge');
+            badge.textContent = '🪑 أنت تطلب من الطاولة رقم ' + table;
+            badge.classList.remove('hidden');
+        }
+
+        // التقاط الأخطاء غير المتوقعة حتى لا يتوقف السكربت بصمت
+        window.addEventListener('error', function (e) {
+            console.error('خطأ غير متوقع:', e.error || e.message);
+        });
+        window.addEventListener('unhandledrejection', function (e) {
+            console.error('وعد مرفوض:', e.reason);
+        });
+
+        // Initial render on load
+        window.onload = function() {
+            try {
+                setupTableBadge();
+                setupEventListeners();
+                initCategoryUI();
+                initQRDefaults();
+                initDataStore();
+                setSyncStatus(null);
+                startSync();
+            } catch (err) {
+                console.error('فشل تشغيل التطبيق:', err);
+                isLoading = false;
+                loadError = 'حدث خطأ أثناء تشغيل التطبيق. أعد تحميل الصفحة.';
+                renderMenu();
+            }
+        };
+    </script>
+</body>
+</html>
